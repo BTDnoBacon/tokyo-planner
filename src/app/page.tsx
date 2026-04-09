@@ -4,6 +4,7 @@ import { PlacesProvider } from "@/lib/places-context";
 import PlaceList from "@/components/place-list";
 import Timeline from "@/components/timeline";
 import WeatherWidget from "@/components/weather-widget";
+import CurrencyWidget from "@/components/currency-widget";
 
 // Google Maps는 브라우저 전용 — SSR 비활성화
 const MapView = dynamic(() => import("@/components/map-view"), {
@@ -38,9 +39,15 @@ export default function Home() {
             >
               <WeatherWidget />
             </Suspense>
-            <div className="rounded-xl bg-zinc-50 border border-zinc-100 px-4 py-3 text-sm text-zinc-400">
-              환율 위젯 준비 중...
-            </div>
+            <Suspense
+              fallback={
+                <div className="rounded-xl bg-zinc-50 border border-zinc-100 px-4 py-3 text-xs text-zinc-400">
+                  환율 불러오는 중...
+                </div>
+              }
+            >
+              <CurrencyWidget />
+            </Suspense>
           </div>
 
           {/* 장소 목록 */}
