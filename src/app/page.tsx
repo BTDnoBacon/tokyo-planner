@@ -1,6 +1,7 @@
 import dynamic from "next/dynamic";
 import { PlacesProvider } from "@/lib/places-context";
 import PlaceList from "@/components/place-list";
+import Timeline from "@/components/timeline";
 
 // Google Maps는 브라우저 전용 — SSR 비활성화
 const MapView = dynamic(() => import("@/components/map-view"), {
@@ -45,9 +46,7 @@ export default function Home() {
           {/* 타임라인 */}
           <div className="px-4 py-3 border-t border-zinc-100">
             <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">타임라인</span>
-            <div className="mt-2 text-sm text-zinc-400 py-4 text-center">
-              장소를 추가하면 타임라인이 생성됩니다
-            </div>
+            <Timeline />
           </div>
         </aside>
 
