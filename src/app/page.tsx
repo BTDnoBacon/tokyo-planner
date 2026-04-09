@@ -1,5 +1,6 @@
 import dynamic from "next/dynamic";
 import { PlacesProvider } from "@/lib/places-context";
+import PlaceList from "@/components/place-list";
 
 // Google Maps는 브라우저 전용 — SSR 비활성화
 const MapView = dynamic(() => import("@/components/map-view"), {
@@ -38,9 +39,7 @@ export default function Home() {
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">장소 목록</span>
             </div>
-            <div className="text-sm text-zinc-400 py-6 text-center">
-              지도에서 장소를 클릭해 추가하세요
-            </div>
+            <PlaceList />
           </div>
 
           {/* 타임라인 */}
