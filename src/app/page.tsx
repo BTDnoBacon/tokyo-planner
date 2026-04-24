@@ -1,20 +1,10 @@
 import { Suspense } from "react";
-import dynamic from "next/dynamic";
 import { PlacesProvider } from "@/lib/places-context";
 import PlaceList from "@/components/place-list";
 import Timeline from "@/components/timeline";
 import WeatherWidget from "@/components/weather-widget";
 import CurrencyWidget from "@/components/currency-widget";
-
-// Google Maps는 브라우저 전용 — SSR 비활성화
-const MapView = dynamic(() => import("@/components/map-view"), {
-  ssr: false,
-  loading: () => (
-    <div className="absolute inset-0 flex items-center justify-center bg-zinc-100 text-zinc-400 text-sm">
-      지도 불러오는 중...
-    </div>
-  ),
-});
+import MapViewDynamic from "@/components/map-view-dynamic";
 
 export default function Home() {
   return (
@@ -67,7 +57,7 @@ export default function Home() {
 
         {/* 지도 영역 */}
         <main className="flex-1 relative">
-          <MapView />
+          <MapViewDynamic />
         </main>
       </div>
     </PlacesProvider>
