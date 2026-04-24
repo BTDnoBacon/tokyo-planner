@@ -8,6 +8,7 @@ interface PlacesContextValue {
   addPlace: (place: Omit<Place, "id" | "order">) => void;
   removePlace: (id: string) => void;
   updateStayMinutes: (id: string, minutes: number) => void;
+  renamePlace: (id: string, name: string) => void;
 }
 
 const PlacesContext = createContext<PlacesContextValue | null>(null);
@@ -40,9 +41,15 @@ export function PlacesProvider({ children }: { children: React.ReactNode }) {
     );
   }, []);
 
+  const renamePlace = useCallback((id: string, name: string) => {
+    setPlaces((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, name } : p))
+    );
+  }, []);
+
   return (
     <PlacesContext.Provider
-      value={{ places, addPlace, removePlace, updateStayMinutes }}
+      value={{ places, addPlace, removePlace, updateStayMinutes, renamePlace }}
     >
       {children}
     </PlacesContext.Provider>
