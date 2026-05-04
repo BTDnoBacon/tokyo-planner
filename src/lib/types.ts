@@ -3,6 +3,15 @@ export interface Place {
   name: string;
   lat: number;
   lng: number;
-  stayMinutes: number; // 체류 시간 (분)
-  order: number;       // 방문 순서
+  stayMinutes: number;
+  order: number;
+}
+
+export type TransportMode = "walk" | "transit" | "taxi";
+
+export interface Transit {
+  fromId: string; // place id
+  toId: string;   // place id
+  mode: TransportMode;
+  minutes: number;
 }
