@@ -38,7 +38,7 @@ function TransitBlock({
   fromId: string;
   toId: string;
 }) {
-  const { places, transits, updateTransit } = usePlaces();
+  const { places, transits, updateTransit, setDirectionsResult } = usePlaces();
   const transit = transits.find((t) => t.fromId === fromId && t.toId === toId);
   const [isPending, setIsPending] = useState(false);
   const [autoError, setAutoError] = useState<string | null>(null);
@@ -49,6 +49,8 @@ function TransitBlock({
   function handleModeClick(mode: TransportMode) {
     const defaultMin = TRANSPORT_OPTIONS.find((o) => o.mode === mode)!.defaultMin;
     updateTransit(fromId, toId, mode, transit?.minutes ?? defaultMin);
+    // 수단 바꾸면 기존 경로 지우기
+    setDirectionsResult(fromId, toId, null);
     setAutoError(null);
   }
 
@@ -62,6 +64,7 @@ function TransitBlock({
     const to = places.find((p) => p.id === toId);
     if (!from || !to) return;
 
+    // 택시는 경로 표시 없이 driving 시간만
     const travelMode = TRANSPORT_OPTIONS.find((o) => o.mode === currentMode)!.travelMode;
     const googleMode =
       travelMode === "walking" ? google.maps.TravelMode.WALKING :
@@ -70,6 +73,7 @@ function TransitBlock({
 
     setAutoError(null);
     setIsPending(true);
+    setDirectionsResult(fromId, toId, null);
 
     const service = new google.maps.DirectionsService();
     service.route(
@@ -86,8 +90,12 @@ function TransitBlock({
         if (status === google.maps.DirectionsStatus.OK && result) {
           const seconds = result.routes[0]?.legs[0]?.duration?.value ?? 0;
           updateTransit(fromId, toId, currentMode, Math.ceil(seconds / 60));
+          // 택시는 경로 지도 표시 안 함
+          if (currentMode !== "taxi") {
+            setDirectionsResult(fromId, toId, result);
+          }
         } else {
-          setAutoError(`경로 없음 (${status})`);
+          setAutoError(`경로를 찾을 수 없습니다`);
         }
       }
     );
