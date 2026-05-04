@@ -1,65 +1,65 @@
-import Image from "next/image";
+import { Suspense } from "react";
+import { PlacesProvider } from "@/lib/places-context";
+import PlaceList from "@/components/place-list";
+import Timeline from "@/components/timeline";
+import WeatherWidget from "@/components/weather-widget";
+import CurrencyWidget from "@/components/currency-widget";
+import MapViewDynamic from "@/components/map-view-dynamic";
 
 export default function Home() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+    <PlacesProvider>
+      <div className="flex h-full">
+        {/* 사이드바 */}
+        <aside className="w-80 shrink-0 flex flex-col border-r border-zinc-200 bg-white overflow-y-auto">
+          {/* 헤더 */}
+          <div className="px-5 py-4 border-b border-zinc-100">
+            <h1 className="text-lg font-semibold tracking-tight">🗼 Tokyo Planner</h1>
+            <p className="text-xs text-zinc-400 mt-0.5">지도에 장소를 추가해 일정을 만들어보세요</p>
+          </div>
+
+          {/* 날씨 + 환율 위젯 영역 */}
+          <div className="px-4 py-3 space-y-2 border-b border-zinc-100">
+            <Suspense
+              fallback={
+                <div className="rounded-xl bg-zinc-50 border border-zinc-100 px-4 py-3 text-xs text-zinc-400">
+                  날씨 불러오는 중...
+                </div>
+              }
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+              <WeatherWidget />
+            </Suspense>
+            <Suspense
+              fallback={
+                <div className="rounded-xl bg-zinc-50 border border-zinc-100 px-4 py-3 text-xs text-zinc-400">
+                  환율 불러오는 중...
+                </div>
+              }
             >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+              <CurrencyWidget />
+            </Suspense>
+          </div>
+
+          {/* 장소 목록 */}
+          <div className="flex-1 px-4 py-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">장소 목록</span>
+            </div>
+            <PlaceList />
+          </div>
+
+          {/* 타임라인 */}
+          <div className="px-4 py-3 border-t border-zinc-100">
+            <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">타임라인</span>
+            <Timeline />
+          </div>
+        </aside>
+
+        {/* 지도 영역 */}
+        <main className="flex-1 relative">
+          <MapViewDynamic />
+        </main>
+      </div>
+    </PlacesProvider>
   );
 }
