@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { usePlaces } from "@/lib/places-context";
+import { fetchDirections } from "@/lib/actions/directions";
 import type { TransportMode } from "@/lib/types";
 
 function formatTime(totalMinutes: number) {
@@ -42,7 +43,7 @@ function TransitBlock({
 }) {
   const { places, transits, updateTransit, setDirectionsResult } = usePlaces();
   const transit = transits.find((t) => t.fromId === fromId && t.toId === toId);
-  const [isPending, setIsPending] = useState(false);
+  const [isPending, startTransition] = useTransition();
   const [autoError, setAutoError] = useState<string | null>(null);
 
   const currentMode: TransportMode = transit?.mode ?? "walk";
@@ -51,7 +52,6 @@ function TransitBlock({
   function handleModeClick(mode: TransportMode) {
     const defaultMin = TRANSPORT_OPTIONS.find((o) => o.mode === mode)!.defaultMin;
     updateTransit(fromId, toId, mode, transit?.minutes ?? defaultMin);
-    // 수단 바꾸면 기존 경로 지우기
     setDirectionsResult(fromId, toId, null);
     setAutoError(null);
   }
@@ -66,49 +66,57 @@ function TransitBlock({
     const to = places.find((p) => p.id === toId);
     if (!from || !to) return;
 
-    // 택시는 경로 표시 없이 driving 시간만
     const travelMode = TRANSPORT_OPTIONS.find((o) => o.mode === currentMode)!.travelMode;
-    const googleMode =
-      travelMode === "walking" ? google.maps.TravelMode.WALKING :
-      travelMode === "transit" ? google.maps.TravelMode.TRANSIT :
-      google.maps.TravelMode.DRIVING;
 
     setAutoError(null);
-    setIsPending(true);
     setDirectionsResult(fromId, toId, null);
 
-    const service = new google.maps.DirectionsService();
-    service.route(
-      {
-        origin: { lat: from.lat, lng: from.lng },
-        destination: { lat: to.lat, lng: to.lng },
-        travelMode: googleMode,
-        ...(googleMode === google.maps.TravelMode.TRANSIT && {
-          transitOptions: {
-            departureTime: (() => {
-              const d = new Date();
-              d.setHours(departureHour, 0, 0, 0);
-              // 이미 지난 시각이면 내일로
-              if (d < new Date()) d.setDate(d.getDate() + 1);
-              return d;
-            })(),
-          },
-        }),
-      },
-      (result, status) => {
-        setIsPending(false);
-        if (status === google.maps.DirectionsStatus.OK && result) {
-          const seconds = result.routes[0]?.legs[0]?.duration?.value ?? 0;
-          updateTransit(fromId, toId, currentMode, Math.ceil(seconds / 60));
-          // 택시는 경로 지도 표시 안 함
-          if (currentMode !== "taxi") {
-            setDirectionsResult(fromId, toId, result);
-          }
-        } else {
-          setAutoError(`경로를 찾을 수 없습니다 (${status})`);
-        }
+    startTransition(async () => {
+      // Server Action으로 이동 시간 계산 (서버 키 사용)
+      const result = await fetchDirections(
+        from.lat, from.lng, to.lat, to.lng,
+        travelMode, departureHour
+      );
+
+      if (!result.ok) {
+        setAutoError(result.error);
+        return;
       }
-    );
+
+      updateTransit(fromId, toId, currentMode, result.data.durationMinutes);
+
+      // 도보/전철은 경로 지도 표시 — 클라이언트 SDK로 렌더링용 결과 가져오기
+      if (currentMode !== "taxi") {
+        const googleMode =
+          travelMode === "walking" ? google.maps.TravelMode.WALKING :
+          google.maps.TravelMode.TRANSIT;
+
+        const service = new google.maps.DirectionsService();
+        service.route(
+          {
+            origin: { lat: from.lat, lng: from.lng },
+            destination: { lat: to.lat, lng: to.lng },
+            travelMode: googleMode,
+            ...(googleMode === google.maps.TravelMode.TRANSIT && {
+              transitOptions: {
+                departureTime: (() => {
+                  const d = new Date();
+                  d.setHours(departureHour, 0, 0, 0);
+                  if (d <= new Date()) d.setDate(d.getDate() + 1);
+                  return d;
+                })(),
+              },
+            }),
+          },
+          (sdkResult, status) => {
+            if (status === google.maps.DirectionsStatus.OK && sdkResult) {
+              setDirectionsResult(fromId, toId, sdkResult);
+            }
+            // 시각화 실패해도 시간은 이미 업데이트됐으니 무시
+          }
+        );
+      }
+    });
   }
 
   const currentOption = TRANSPORT_OPTIONS.find((o) => o.mode === currentMode)!;
