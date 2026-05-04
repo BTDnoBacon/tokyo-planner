@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { usePlaces } from "@/lib/places-context";
-import { fetchDirections } from "@/lib/actions/directions";
 import type { TransportMode } from "@/lib/types";
 
 function formatTime(totalMinutes: number) {
@@ -41,7 +40,7 @@ function TransitBlock({
 }) {
   const { places, transits, updateTransit } = usePlaces();
   const transit = transits.find((t) => t.fromId === fromId && t.toId === toId);
-  const [isPending, startTransition] = useTransition();
+  const [isPending, setIsPending] = useState(false);
   const [autoError, setAutoError] = useState<string | null>(null);
 
   const currentMode: TransportMode = transit?.mode ?? "walk";
@@ -64,20 +63,31 @@ function TransitBlock({
     if (!from || !to) return;
 
     const travelMode = TRANSPORT_OPTIONS.find((o) => o.mode === currentMode)!.travelMode;
-    setAutoError(null);
+    const googleMode =
+      travelMode === "walking" ? google.maps.TravelMode.WALKING :
+      travelMode === "transit" ? google.maps.TravelMode.TRANSIT :
+      google.maps.TravelMode.DRIVING;
 
-    startTransition(async () => {
-      const result = await fetchDirections(
-        from.lat, from.lng,
-        to.lat, to.lng,
-        travelMode
-      );
-      if (result.ok) {
-        updateTransit(fromId, toId, currentMode, result.data.durationMinutes);
-      } else {
-        setAutoError(result.error);
+    setAutoError(null);
+    setIsPending(true);
+
+    const service = new google.maps.DirectionsService();
+    service.route(
+      {
+        origin: { lat: from.lat, lng: from.lng },
+        destination: { lat: to.lat, lng: to.lng },
+        travelMode: googleMode,
+      },
+      (result, status) => {
+        setIsPending(false);
+        if (status === google.maps.DirectionsStatus.OK && result) {
+          const seconds = result.routes[0]?.legs[0]?.duration?.value ?? 0;
+          updateTransit(fromId, toId, currentMode, Math.ceil(seconds / 60));
+        } else {
+          setAutoError(`경로 없음 (${status})`);
+        }
       }
-    });
+    );
   }
 
   const currentOption = TRANSPORT_OPTIONS.find((o) => o.mode === currentMode)!;
