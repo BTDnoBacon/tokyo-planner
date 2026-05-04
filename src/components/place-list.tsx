@@ -54,7 +54,7 @@ function PlaceNameEditor({
   return (
     <button
       onClick={() => { setDraft(name); setEditing(true); }}
-      className="flex-1 text-sm font-medium leading-snug text-zinc-800 wrap-break-word text-left hover:text-red-500 transition-colors"
+      className="flex-1 text-sm font-medium leading-snug text-zinc-800 break-all text-left hover:text-red-500 transition-colors"
       title="클릭해서 이름 수정"
     >
       {name}

@@ -9,9 +9,10 @@ interface Props {
 export default function CurrencyCalculator({ rate }: Props) {
   const [krw, setKrw] = useState("");
 
+  const krwNum = Number(krw);
   const jpy =
-    krw !== "" && !isNaN(Number(krw))
-      ? Math.round(Number(krw) * rate)
+    krw !== "" && !isNaN(krwNum) && krwNum > 0
+      ? Math.round(krwNum * rate)
       : null;
 
   return (
