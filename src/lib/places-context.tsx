@@ -11,6 +11,8 @@ interface PlacesContextValue {
   updateStayMinutes: (id: string, minutes: number) => void;
   renamePlace: (id: string, name: string) => void;
   updateTransit: (fromId: string, toId: string, mode: TransportMode, minutes: number) => void;
+  loadFromRoute: (places: Place[], transits: Transit[]) => void;
+  clearAll: () => void;
 }
 
 const PlacesContext = createContext<PlacesContextValue | null>(null);
@@ -35,7 +37,6 @@ export function PlacesProvider({ children }: { children: React.ReactNode }) {
       const filtered = prev.filter((p) => p.id !== id);
       return filtered.map((p, i) => ({ ...p, order: i + 1 }));
     });
-    // 해당 장소와 연결된 transit 제거
     setTransits((prev) => prev.filter((t) => t.fromId !== id && t.toId !== id));
   }, []);
 
@@ -68,9 +69,20 @@ export function PlacesProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
+  // 저장된 루트 불러오기 — 현재 편집 상태를 루트 데이터로 교체
+  const loadFromRoute = useCallback((newPlaces: Place[], newTransits: Transit[]) => {
+    setPlaces(newPlaces);
+    setTransits(newTransits);
+  }, []);
+
+  const clearAll = useCallback(() => {
+    setPlaces([]);
+    setTransits([]);
+  }, []);
+
   return (
     <PlacesContext.Provider
-      value={{ places, transits, addPlace, removePlace, updateStayMinutes, renamePlace, updateTransit }}
+      value={{ places, transits, addPlace, removePlace, updateStayMinutes, renamePlace, updateTransit, loadFromRoute, clearAll }}
     >
       {children}
     </PlacesContext.Provider>
