@@ -34,9 +34,11 @@ const START_HOUR_OPTIONS = [7, 8, 9, 10, 11] as const;
 function TransitBlock({
   fromId,
   toId,
+  departureHour,
 }: {
   fromId: string;
   toId: string;
+  departureHour: number;
 }) {
   const { places, transits, updateTransit, setDirectionsResult } = usePlaces();
   const transit = transits.find((t) => t.fromId === fromId && t.toId === toId);
@@ -82,7 +84,15 @@ function TransitBlock({
         destination: { lat: to.lat, lng: to.lng },
         travelMode: googleMode,
         ...(googleMode === google.maps.TravelMode.TRANSIT && {
-          transitOptions: { departureTime: new Date() },
+          transitOptions: {
+            departureTime: (() => {
+              const d = new Date();
+              d.setHours(departureHour, 0, 0, 0);
+              // 이미 지난 시각이면 내일로
+              if (d < new Date()) d.setDate(d.getDate() + 1);
+              return d;
+            })(),
+          },
         }),
       },
       (result, status) => {
@@ -95,7 +105,7 @@ function TransitBlock({
             setDirectionsResult(fromId, toId, result);
           }
         } else {
-          setAutoError(`경로를 찾을 수 없습니다`);
+          setAutoError(`경로를 찾을 수 없습니다 (${status})`);
         }
       }
     );
@@ -249,7 +259,7 @@ export default function Timeline() {
           }
 
           return (
-            <TransitBlock key={block.key} fromId={block.fromId!} toId={block.toId!} />
+            <TransitBlock key={block.key} fromId={block.fromId!} toId={block.toId!} departureHour={startHour} />
           );
         })}
 
