@@ -10,8 +10,17 @@ export interface Place {
 export type TransportMode = "walk" | "transit" | "taxi";
 
 export interface Transit {
-  fromId: string; // place id
-  toId: string;   // place id
+  fromId: string;
+  toId: string;
   mode: TransportMode;
   minutes: number;
+}
+
+export interface Route {
+  id: string;
+  name: string;
+  date: string;    // "YYYY-MM-DD"
+  places: Place[];
+  transits: Transit[];
+  createdAt: number;
 }
