@@ -7,6 +7,7 @@ import WeatherWidget from "@/components/weather-widget";
 import CurrencyWidget from "@/components/currency-widget";
 import MapViewDynamic from "@/components/map-view-dynamic";
 import RoutePanel from "@/components/route-panel";
+import SidebarHeader from "@/components/sidebar-header";
 
 export default function Home() {
   return (
@@ -16,10 +17,7 @@ export default function Home() {
           {/* 사이드바 */}
           <aside className="w-80 shrink-0 flex flex-col border-r border-zinc-200 bg-white overflow-y-auto">
             {/* 헤더 */}
-            <div className="px-5 py-4 border-b border-zinc-100">
-              <h1 className="text-lg font-semibold tracking-tight">🗼 Tokyo Planner</h1>
-              <p className="text-xs text-zinc-400 mt-0.5">지도에 장소를 추가해 일정을 만들어보세요</p>
-            </div>
+            <SidebarHeader />
 
             {/* 날씨 + 환율 위젯 */}
             <div className="px-4 py-3 space-y-2 border-b border-zinc-100">
