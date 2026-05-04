@@ -77,6 +77,9 @@ function TransitBlock({
         origin: { lat: from.lat, lng: from.lng },
         destination: { lat: to.lat, lng: to.lng },
         travelMode: googleMode,
+        ...(googleMode === google.maps.TravelMode.TRANSIT && {
+          transitOptions: { departureTime: new Date() },
+        }),
       },
       (result, status) => {
         setIsPending(false);
