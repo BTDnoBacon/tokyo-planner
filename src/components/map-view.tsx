@@ -39,26 +39,31 @@ function MapClickHandler() {
         location: { lat, lng },
       });
       const results = result.results;
-
-      // 1순위: establishment/POI 타입 result의 첫 번째 address_component 이름
-      const poiResult = results.find((r: google.maps.GeocoderResult) =>
-        r.types.some(
-          (t: string) => t === "establishment" || t === "point_of_interest",
-        ),
+      const allComponents = results.flatMap(
+        (r: google.maps.GeocoderResult) => r.address_components,
       );
 
+      // 1순위: establishment/POI 타입 컴포넌트 이름 (역, 랜드마크 등)
+      const poiName = allComponents.find(
+        (c: google.maps.GeocoderAddressComponent) =>
+          c.types.includes("establishment") ||
+          c.types.includes("point_of_interest"),
+      )?.long_name;
+
       // 2순위: sublocality_level_2 (동네명) — 한국어로 오는 경우 우선
-      const sublocalityName = results
-        .flatMap((r: google.maps.GeocoderResult) => r.address_components)
-        .find((c: google.maps.GeocoderAddressComponent) => c.types.includes("sublocality_level_2"))?.long_name;
+      const sublocalityName = allComponents.find(
+        (c: google.maps.GeocoderAddressComponent) =>
+          c.types.includes("sublocality_level_2"),
+      )?.long_name;
 
       // 3순위: locality (구명)
-      const localityName = results
-        .flatMap((r: google.maps.GeocoderResult) => r.address_components)
-        .find((c: google.maps.GeocoderAddressComponent) => c.types.includes("locality"))?.long_name;
+      const localityName = allComponents.find(
+        (c: google.maps.GeocoderAddressComponent) =>
+          c.types.includes("locality"),
+      )?.long_name;
 
       const name =
-        poiResult?.address_components[0]?.long_name ??
+        poiName ??
         sublocalityName ??
         localityName ??
         `장소 (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
