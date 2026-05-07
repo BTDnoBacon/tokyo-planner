@@ -34,26 +34,26 @@ const START_HOUR_OPTIONS = [7, 8, 9, 10, 11] as const;
 
 function TransitStepsList({ steps }: { steps: TransitStep[] }) {
   return (
-    <div className="mt-1.5 ml-1 space-y-0.5">
+    <div className="ml-1 mt-1 space-y-1 border-l-2 border-zinc-100 pl-3">
       {steps.map((step, i) => (
-        <div key={i} className="flex items-start gap-1.5 text-[10px]">
+        <div key={i} className="flex items-start gap-2">
           {step.type === "walk" ? (
             <>
-              <span className="shrink-0 text-zinc-400 mt-0.5">🚶</span>
-              <span className="text-zinc-400">도보 {step.minutes}분</span>
+              <span className="shrink-0 text-base leading-none mt-0.5">🚶</span>
+              <span className="text-xs text-zinc-400">도보 {step.minutes}분</span>
             </>
           ) : (
             <>
               <span
-                className="shrink-0 mt-1 w-2 h-2 rounded-sm"
+                className="shrink-0 mt-1.5 w-2.5 h-2.5 rounded-sm"
                 style={{ backgroundColor: step.color ?? "#888" }}
               />
-              <div className="text-zinc-500 leading-tight">
+              <div className="text-xs text-zinc-600 leading-snug">
                 <span className="font-medium">{step.lineName}</span>
                 {step.fromStation && step.toStation && (
-                  <span className="text-zinc-400"> {step.fromStation} → {step.toStation}</span>
+                  <span className="text-zinc-400"> · {step.fromStation} → {step.toStation}</span>
                 )}
-                <span className="text-zinc-400"> ({step.minutes}분)</span>
+                <span className="text-zinc-400"> {step.minutes}분</span>
               </div>
             </>
           )}
@@ -150,64 +150,62 @@ function TransitBlock({
     <li className="pl-4 pb-3 relative">
       <span className="absolute -left-px top-0 bottom-0 border-l border-dashed border-zinc-300" />
       <div className="ml-1 space-y-1">
-        <div className="flex items-center gap-1.5 bg-zinc-50 border border-zinc-100 rounded-lg px-2.5 py-1.5">
-          {/* 수단 선택 */}
-          <div className="flex gap-0.5">
-            {TRANSPORT_OPTIONS.map((opt) => (
-              <button
-                key={opt.mode}
-                onClick={() => handleModeClick(opt.mode)}
-                className={`rounded px-1.5 py-0.5 text-xs transition-colors ${
-                  currentMode === opt.mode
-                    ? "bg-zinc-700 text-white"
-                    : "text-zinc-400 hover:text-zinc-600"
-                }`}
-                title={opt.label}
-              >
-                {opt.icon}
-              </button>
-            ))}
+        <div className="bg-zinc-50 border border-zinc-100 rounded-lg px-3 py-2 space-y-2">
+          {/* 1행: 수단 선택 + 시간 입력 */}
+          <div className="flex items-center gap-2">
+            <div className="flex gap-0.5">
+              {TRANSPORT_OPTIONS.map((opt) => (
+                <button
+                  key={opt.mode}
+                  onClick={() => handleModeClick(opt.mode)}
+                  className={`rounded px-2 py-0.5 text-sm transition-colors ${
+                    currentMode === opt.mode
+                      ? "bg-zinc-700 text-white"
+                      : "text-zinc-400 hover:text-zinc-600"
+                  }`}
+                  title={opt.label}
+                >
+                  {opt.icon}
+                </button>
+              ))}
+            </div>
+            <span className="text-zinc-300 text-xs">·</span>
+            <div className="flex items-center gap-1">
+              <input
+                type="number"
+                min={1}
+                max={300}
+                value={currentMin}
+                onChange={(e) => handleMinChange(e.target.value)}
+                className="w-10 text-center text-xs border border-zinc-200 rounded px-1 py-0.5 outline-none focus:border-zinc-400 bg-white"
+              />
+              <span className="text-xs text-zinc-400">분</span>
+            </div>
+            <span className="text-xs text-zinc-500">{currentOption.icon} {currentOption.label}</span>
           </div>
-          <span className="text-zinc-300">·</span>
-          {/* 시간 입력 */}
-          <div className="flex items-center gap-0.5">
-            <input
-              type="number"
-              min={1}
-              max={300}
-              value={currentMin}
-              onChange={(e) => handleMinChange(e.target.value)}
-              className="w-9 text-center text-xs border border-zinc-200 rounded px-1 py-0.5 outline-none focus:border-zinc-400 bg-white"
-            />
-            <span className="text-xs text-zinc-400">분</span>
-          </div>
-          <span className="text-xs text-zinc-400">{currentOption.icon} {currentOption.label}</span>
 
-          <div className="ml-auto flex items-center gap-1">
-            {/* 경로 상세 토글 */}
-            {steps && steps.length > 0 && (
-              <button
-                onClick={() => setShowSteps((v) => !v)}
-                className="text-[10px] px-1.5 py-0.5 rounded border border-zinc-200 text-zinc-400 hover:border-zinc-400 hover:text-zinc-600 transition-colors"
-                title="경로 상세 보기"
-              >
-                {showSteps ? "접기" : "경로"}
-              </button>
-            )}
-            {/* 자동 계산 버튼 */}
+          {/* 2행: 버튼들 */}
+          <div className="flex items-center gap-1.5">
             <button
               onClick={handleAutoCalc}
               disabled={isPending}
-              className="text-[10px] px-1.5 py-0.5 rounded border border-zinc-200 text-zinc-400 hover:border-zinc-400 hover:text-zinc-600 transition-colors disabled:opacity-50"
-              title="이동 시간 자동 계산"
+              className="text-xs px-2.5 py-0.5 rounded-full border border-zinc-200 text-zinc-500 hover:border-zinc-400 hover:text-zinc-700 transition-colors disabled:opacity-50"
             >
-              {isPending ? "⏳" : "자동"}
+              {isPending ? "계산 중..." : "자동 계산"}
             </button>
+            {steps && steps.length > 0 && (
+              <button
+                onClick={() => setShowSteps((v) => !v)}
+                className="text-xs px-2.5 py-0.5 rounded-full border border-zinc-200 text-zinc-500 hover:border-zinc-400 hover:text-zinc-700 transition-colors"
+              >
+                {showSteps ? "접기" : "경로 보기"}
+              </button>
+            )}
           </div>
         </div>
 
         {autoError && (
-          <p className="text-[10px] text-red-400 ml-1">{autoError}</p>
+          <p className="text-xs text-red-400 ml-1">{autoError}</p>
         )}
 
         {showSteps && steps && <TransitStepsList steps={steps} />}
