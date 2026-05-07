@@ -1,19 +1,20 @@
 "use client";
 
 import { createContext, useContext, useState, useCallback } from "react";
-import type { Place, Transit, TransportMode } from "./types";
+import type { Place, Transit, TransportMode, TransitStep } from "./types";
 
 interface PlacesContextValue {
   places: Place[];
   transits: Transit[];
-  // fromId-toId 키로 DirectionsResult 저장
   directionsResults: Record<string, google.maps.DirectionsResult>;
+  transitSteps: Record<string, TransitStep[]>;
   addPlace: (place: Omit<Place, "id" | "order">) => void;
   removePlace: (id: string) => void;
   updateStayMinutes: (id: string, minutes: number) => void;
   renamePlace: (id: string, name: string) => void;
   updateTransit: (fromId: string, toId: string, mode: TransportMode, minutes: number) => void;
   setDirectionsResult: (fromId: string, toId: string, result: google.maps.DirectionsResult | null) => void;
+  setTransitSteps: (fromId: string, toId: string, steps: TransitStep[] | null) => void;
   loadFromRoute: (places: Place[], transits: Transit[]) => void;
   clearAll: () => void;
 }
@@ -24,6 +25,7 @@ export function PlacesProvider({ children }: { children: React.ReactNode }) {
   const [places, setPlaces] = useState<Place[]>([]);
   const [transits, setTransits] = useState<Transit[]>([]);
   const [directionsResults, setDirectionsResults] = useState<Record<string, google.maps.DirectionsResult>>({});
+  const [transitSteps, setTransitStepsState] = useState<Record<string, TransitStep[]>>({});
 
   const addPlace = useCallback((place: Omit<Place, "id" | "order">) => {
     setPlaces((prev) => [
@@ -39,6 +41,13 @@ export function PlacesProvider({ children }: { children: React.ReactNode }) {
     });
     setTransits((prev) => prev.filter((t) => t.fromId !== id && t.toId !== id));
     setDirectionsResults((prev) => {
+      const next = { ...prev };
+      Object.keys(next).forEach((key) => {
+        if (key.startsWith(id) || key.endsWith(id)) delete next[key];
+      });
+      return next;
+    });
+    setTransitStepsState((prev) => {
       const next = { ...prev };
       Object.keys(next).forEach((key) => {
         if (key.startsWith(id) || key.endsWith(id)) delete next[key];
@@ -89,24 +98,41 @@ export function PlacesProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
+  const setTransitSteps = useCallback(
+    (fromId: string, toId: string, steps: TransitStep[] | null) => {
+      setTransitStepsState((prev) => {
+        const key = `${fromId}-${toId}`;
+        if (steps === null) {
+          const next = { ...prev };
+          delete next[key];
+          return next;
+        }
+        return { ...prev, [key]: steps };
+      });
+    },
+    []
+  );
+
   const loadFromRoute = useCallback((newPlaces: Place[], newTransits: Transit[]) => {
     setPlaces(newPlaces);
     setTransits(newTransits);
     setDirectionsResults({});
+    setTransitStepsState({});
   }, []);
 
   const clearAll = useCallback(() => {
     setPlaces([]);
     setTransits([]);
     setDirectionsResults({});
+    setTransitStepsState({});
   }, []);
 
   return (
     <PlacesContext.Provider
       value={{
-        places, transits, directionsResults,
+        places, transits, directionsResults, transitSteps,
         addPlace, removePlace, updateStayMinutes, renamePlace,
-        updateTransit, setDirectionsResult, loadFromRoute, clearAll,
+        updateTransit, setDirectionsResult, setTransitSteps, loadFromRoute, clearAll,
       }}
     >
       {children}

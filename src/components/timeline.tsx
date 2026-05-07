@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { usePlaces } from "@/lib/places-context";
 import { fetchDirections } from "@/lib/actions/directions";
-import type { TransportMode } from "@/lib/types";
+import type { TransportMode, TransitStep } from "@/lib/types";
 
 function formatTime(totalMinutes: number) {
   const h = Math.floor(totalMinutes / 60) % 24;
@@ -32,6 +32,37 @@ const TRANSPORT_OPTIONS: {
 
 const START_HOUR_OPTIONS = [7, 8, 9, 10, 11] as const;
 
+function TransitStepsList({ steps }: { steps: TransitStep[] }) {
+  return (
+    <div className="mt-1.5 ml-1 space-y-0.5">
+      {steps.map((step, i) => (
+        <div key={i} className="flex items-start gap-1.5 text-[10px]">
+          {step.type === "walk" ? (
+            <>
+              <span className="shrink-0 text-zinc-400 mt-0.5">🚶</span>
+              <span className="text-zinc-400">도보 {step.minutes}분</span>
+            </>
+          ) : (
+            <>
+              <span
+                className="shrink-0 mt-1 w-2 h-2 rounded-sm"
+                style={{ backgroundColor: step.color ?? "#888" }}
+              />
+              <div className="text-zinc-500 leading-tight">
+                <span className="font-medium">{step.lineName}</span>
+                {step.fromStation && step.toStation && (
+                  <span className="text-zinc-400"> {step.fromStation} → {step.toStation}</span>
+                )}
+                <span className="text-zinc-400"> ({step.minutes}분)</span>
+              </div>
+            </>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function TransitBlock({
   fromId,
   toId,
@@ -41,10 +72,12 @@ function TransitBlock({
   toId: string;
   departureHour: number;
 }) {
-  const { places, transits, updateTransit, setDirectionsResult } = usePlaces();
+  const { places, transits, transitSteps, updateTransit, setDirectionsResult, setTransitSteps } = usePlaces();
   const transit = transits.find((t) => t.fromId === fromId && t.toId === toId);
+  const steps = transitSteps[`${fromId}-${toId}`] ?? null;
   const [isPending, startTransition] = useTransition();
   const [autoError, setAutoError] = useState<string | null>(null);
+  const [showSteps, setShowSteps] = useState(false);
 
   const currentMode: TransportMode = transit?.mode ?? "walk";
   const currentMin = transit?.minutes ?? 15;
@@ -53,7 +86,9 @@ function TransitBlock({
     const defaultMin = TRANSPORT_OPTIONS.find((o) => o.mode === mode)!.defaultMin;
     updateTransit(fromId, toId, mode, transit?.minutes ?? defaultMin);
     setDirectionsResult(fromId, toId, null);
+    setTransitSteps(fromId, toId, null);
     setAutoError(null);
+    setShowSteps(false);
   }
 
   function handleMinChange(raw: string) {
@@ -70,9 +105,9 @@ function TransitBlock({
 
     setAutoError(null);
     setDirectionsResult(fromId, toId, null);
+    setTransitSteps(fromId, toId, null);
 
     startTransition(async () => {
-      // Server Action으로 이동 시간 계산 (서버 키 사용)
       const result = await fetchDirections(
         from.lat, from.lng, to.lat, to.lng,
         travelMode, departureHour
@@ -85,34 +120,24 @@ function TransitBlock({
 
       updateTransit(fromId, toId, currentMode, result.data.durationMinutes);
 
-      // 도보/전철은 경로 지도 표시 — 클라이언트 SDK로 렌더링용 결과 가져오기
-      if (currentMode !== "taxi") {
-        const googleMode =
-          travelMode === "walking" ? google.maps.TravelMode.WALKING :
-          google.maps.TravelMode.TRANSIT;
+      if (result.data.steps && result.data.steps.length > 0) {
+        setTransitSteps(fromId, toId, result.data.steps);
+        setShowSteps(true);
+      }
 
+      // 도보는 구글 SDK로 경로 지도 표시
+      if (currentMode === "walk") {
         const service = new google.maps.DirectionsService();
         service.route(
           {
             origin: { lat: from.lat, lng: from.lng },
             destination: { lat: to.lat, lng: to.lng },
-            travelMode: googleMode,
-            ...(googleMode === google.maps.TravelMode.TRANSIT && {
-              transitOptions: {
-                departureTime: (() => {
-                  const d = new Date();
-                  d.setHours(departureHour, 0, 0, 0);
-                  if (d <= new Date()) d.setDate(d.getDate() + 1);
-                  return d;
-                })(),
-              },
-            }),
+            travelMode: google.maps.TravelMode.WALKING,
           },
           (sdkResult, status) => {
             if (status === google.maps.DirectionsStatus.OK && sdkResult) {
               setDirectionsResult(fromId, toId, sdkResult);
             }
-            // 시각화 실패해도 시간은 이미 업데이트됐으니 무시
           }
         );
       }
@@ -158,20 +183,34 @@ function TransitBlock({
           </div>
           <span className="text-xs text-zinc-400">{currentOption.icon} {currentOption.label}</span>
 
-          {/* 자동 계산 버튼 */}
-          <button
-            onClick={handleAutoCalc}
-            disabled={isPending}
-            className="ml-auto text-[10px] px-1.5 py-0.5 rounded border border-zinc-200 text-zinc-400 hover:border-zinc-400 hover:text-zinc-600 transition-colors disabled:opacity-50"
-            title="Google Maps로 실제 이동 시간 계산"
-          >
-            {isPending ? "⏳" : "자동"}
-          </button>
+          <div className="ml-auto flex items-center gap-1">
+            {/* 경로 상세 토글 */}
+            {steps && steps.length > 0 && (
+              <button
+                onClick={() => setShowSteps((v) => !v)}
+                className="text-[10px] px-1.5 py-0.5 rounded border border-zinc-200 text-zinc-400 hover:border-zinc-400 hover:text-zinc-600 transition-colors"
+                title="경로 상세 보기"
+              >
+                {showSteps ? "접기" : "경로"}
+              </button>
+            )}
+            {/* 자동 계산 버튼 */}
+            <button
+              onClick={handleAutoCalc}
+              disabled={isPending}
+              className="text-[10px] px-1.5 py-0.5 rounded border border-zinc-200 text-zinc-400 hover:border-zinc-400 hover:text-zinc-600 transition-colors disabled:opacity-50"
+              title="이동 시간 자동 계산"
+            >
+              {isPending ? "⏳" : "자동"}
+            </button>
+          </div>
         </div>
 
         {autoError && (
           <p className="text-[10px] text-red-400 ml-1">{autoError}</p>
         )}
+
+        {showSteps && steps && <TransitStepsList steps={steps} />}
       </div>
     </li>
   );

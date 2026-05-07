@@ -16,6 +16,15 @@ export interface Transit {
   minutes: number;
 }
 
+export interface TransitStep {
+  type: "walk" | "train";
+  lineName: string;
+  fromStation?: string;
+  toStation?: string;
+  minutes: number;
+  color?: string;
+}
+
 export interface Route {
   id: string;
   name: string;
