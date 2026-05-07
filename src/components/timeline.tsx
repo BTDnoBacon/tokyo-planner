@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { usePlaces } from "@/lib/places-context";
-import type { TransportMode } from "@/lib/types";
+import { fetchDirections } from "@/lib/actions/directions";
+import type { TransportMode, TransitStep } from "@/lib/types";
 
 function formatTime(totalMinutes: number) {
   const h = Math.floor(totalMinutes / 60) % 24;
@@ -17,23 +18,66 @@ function formatDuration(minutes: number) {
   return m === 0 ? `${h}시간` : `${h}시간 ${m}분`;
 }
 
-const TRANSPORT_OPTIONS: { mode: TransportMode; icon: string; label: string; defaultMin: number }[] = [
-  { mode: "walk",    icon: "🚶", label: "도보",   defaultMin: 15 },
-  { mode: "transit", icon: "🚃", label: "전철",   defaultMin: 10 },
-  { mode: "taxi",    icon: "🚕", label: "택시",   defaultMin: 10 },
+const TRANSPORT_OPTIONS: {
+  mode: TransportMode;
+  icon: string;
+  label: string;
+  defaultMin: number;
+  travelMode: "walking" | "transit" | "driving";
+}[] = [
+  { mode: "walk",    icon: "🚶", label: "도보", defaultMin: 15, travelMode: "walking" },
+  { mode: "transit", icon: "🚃", label: "전철", defaultMin: 10, travelMode: "transit" },
+  { mode: "taxi",    icon: "🚕", label: "택시", defaultMin: 10, travelMode: "driving" },
 ];
 
 const START_HOUR_OPTIONS = [7, 8, 9, 10, 11] as const;
 
+function TransitStepsList({ steps }: { steps: TransitStep[] }) {
+  return (
+    <div className="mt-1.5 ml-1 space-y-0.5">
+      {steps.map((step, i) => (
+        <div key={i} className="flex items-start gap-1.5 text-[10px]">
+          {step.type === "walk" ? (
+            <>
+              <span className="shrink-0 text-zinc-400 mt-0.5">🚶</span>
+              <span className="text-zinc-400">도보 {step.minutes}분</span>
+            </>
+          ) : (
+            <>
+              <span
+                className="shrink-0 mt-1 w-2 h-2 rounded-sm"
+                style={{ backgroundColor: step.color ?? "#888" }}
+              />
+              <div className="text-zinc-500 leading-tight">
+                <span className="font-medium">{step.lineName}</span>
+                {step.fromStation && step.toStation && (
+                  <span className="text-zinc-400"> {step.fromStation} → {step.toStation}</span>
+                )}
+                <span className="text-zinc-400"> ({step.minutes}분)</span>
+              </div>
+            </>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function TransitBlock({
   fromId,
   toId,
+  departureHour,
 }: {
   fromId: string;
   toId: string;
+  departureHour: number;
 }) {
-  const { transits, updateTransit } = usePlaces();
+  const { places, transits, transitSteps, updateTransit, setDirectionsResult, setTransitSteps } = usePlaces();
   const transit = transits.find((t) => t.fromId === fromId && t.toId === toId);
+  const steps = transitSteps[`${fromId}-${toId}`] ?? null;
+  const [isPending, startTransition] = useTransition();
+  const [autoError, setAutoError] = useState<string | null>(null);
+  const [showSteps, setShowSteps] = useState(false);
 
   const currentMode: TransportMode = transit?.mode ?? "walk";
   const currentMin = transit?.minutes ?? 15;
@@ -41,6 +85,10 @@ function TransitBlock({
   function handleModeClick(mode: TransportMode) {
     const defaultMin = TRANSPORT_OPTIONS.find((o) => o.mode === mode)!.defaultMin;
     updateTransit(fromId, toId, mode, transit?.minutes ?? defaultMin);
+    setDirectionsResult(fromId, toId, null);
+    setTransitSteps(fromId, toId, null);
+    setAutoError(null);
+    setShowSteps(false);
   }
 
   function handleMinChange(raw: string) {
@@ -48,43 +96,121 @@ function TransitBlock({
     if (!isNaN(val) && val > 0) updateTransit(fromId, toId, currentMode, val);
   }
 
+  function handleAutoCalc() {
+    const from = places.find((p) => p.id === fromId);
+    const to = places.find((p) => p.id === toId);
+    if (!from || !to) return;
+
+    const travelMode = TRANSPORT_OPTIONS.find((o) => o.mode === currentMode)!.travelMode;
+
+    setAutoError(null);
+    setDirectionsResult(fromId, toId, null);
+    setTransitSteps(fromId, toId, null);
+
+    startTransition(async () => {
+      const result = await fetchDirections(
+        from.lat, from.lng, to.lat, to.lng,
+        travelMode, departureHour
+      );
+
+      if (!result.ok) {
+        setAutoError(result.error);
+        return;
+      }
+
+      updateTransit(fromId, toId, currentMode, result.data.durationMinutes);
+
+      if (result.data.steps && result.data.steps.length > 0) {
+        setTransitSteps(fromId, toId, result.data.steps);
+        setShowSteps(true);
+      }
+
+      // 도보는 구글 SDK로 경로 지도 표시
+      if (currentMode === "walk") {
+        const service = new google.maps.DirectionsService();
+        service.route(
+          {
+            origin: { lat: from.lat, lng: from.lng },
+            destination: { lat: to.lat, lng: to.lng },
+            travelMode: google.maps.TravelMode.WALKING,
+          },
+          (sdkResult, status) => {
+            if (status === google.maps.DirectionsStatus.OK && sdkResult) {
+              setDirectionsResult(fromId, toId, sdkResult);
+            }
+          }
+        );
+      }
+    });
+  }
+
   const currentOption = TRANSPORT_OPTIONS.find((o) => o.mode === currentMode)!;
 
   return (
     <li className="pl-4 pb-3 relative">
       <span className="absolute -left-px top-0 bottom-0 border-l border-dashed border-zinc-300" />
-      <div className="ml-1 flex items-center gap-1.5 bg-zinc-50 border border-zinc-100 rounded-lg px-2.5 py-1.5">
-        {/* 수단 선택 */}
-        <div className="flex gap-0.5">
-          {TRANSPORT_OPTIONS.map((opt) => (
+      <div className="ml-1 space-y-1">
+        <div className="flex items-center gap-1.5 bg-zinc-50 border border-zinc-100 rounded-lg px-2.5 py-1.5">
+          {/* 수단 선택 */}
+          <div className="flex gap-0.5">
+            {TRANSPORT_OPTIONS.map((opt) => (
+              <button
+                key={opt.mode}
+                onClick={() => handleModeClick(opt.mode)}
+                className={`rounded px-1.5 py-0.5 text-xs transition-colors ${
+                  currentMode === opt.mode
+                    ? "bg-zinc-700 text-white"
+                    : "text-zinc-400 hover:text-zinc-600"
+                }`}
+                title={opt.label}
+              >
+                {opt.icon}
+              </button>
+            ))}
+          </div>
+          <span className="text-zinc-300">·</span>
+          {/* 시간 입력 */}
+          <div className="flex items-center gap-0.5">
+            <input
+              type="number"
+              min={1}
+              max={300}
+              value={currentMin}
+              onChange={(e) => handleMinChange(e.target.value)}
+              className="w-9 text-center text-xs border border-zinc-200 rounded px-1 py-0.5 outline-none focus:border-zinc-400 bg-white"
+            />
+            <span className="text-xs text-zinc-400">분</span>
+          </div>
+          <span className="text-xs text-zinc-400">{currentOption.icon} {currentOption.label}</span>
+
+          <div className="ml-auto flex items-center gap-1">
+            {/* 경로 상세 토글 */}
+            {steps && steps.length > 0 && (
+              <button
+                onClick={() => setShowSteps((v) => !v)}
+                className="text-[10px] px-1.5 py-0.5 rounded border border-zinc-200 text-zinc-400 hover:border-zinc-400 hover:text-zinc-600 transition-colors"
+                title="경로 상세 보기"
+              >
+                {showSteps ? "접기" : "경로"}
+              </button>
+            )}
+            {/* 자동 계산 버튼 */}
             <button
-              key={opt.mode}
-              onClick={() => handleModeClick(opt.mode)}
-              className={`rounded px-1.5 py-0.5 text-xs transition-colors ${
-                currentMode === opt.mode
-                  ? "bg-zinc-700 text-white"
-                  : "text-zinc-400 hover:text-zinc-600"
-              }`}
-              title={opt.label}
+              onClick={handleAutoCalc}
+              disabled={isPending}
+              className="text-[10px] px-1.5 py-0.5 rounded border border-zinc-200 text-zinc-400 hover:border-zinc-400 hover:text-zinc-600 transition-colors disabled:opacity-50"
+              title="이동 시간 자동 계산"
             >
-              {opt.icon}
+              {isPending ? "⏳" : "자동"}
             </button>
-          ))}
+          </div>
         </div>
-        <span className="text-zinc-300">·</span>
-        {/* 시간 입력 */}
-        <div className="flex items-center gap-0.5">
-          <input
-            type="number"
-            min={1}
-            max={300}
-            value={currentMin}
-            onChange={(e) => handleMinChange(e.target.value)}
-            className="w-9 text-center text-xs border border-zinc-200 rounded px-1 py-0.5 outline-none focus:border-zinc-400 bg-white"
-          />
-          <span className="text-xs text-zinc-400">분</span>
-        </div>
-        <span className="text-xs text-zinc-400 ml-0.5">{currentOption.icon} {currentOption.label}</span>
+
+        {autoError && (
+          <p className="text-[10px] text-red-400 ml-1">{autoError}</p>
+        )}
+
+        {showSteps && steps && <TransitStepsList steps={steps} />}
       </div>
     </li>
   );
@@ -102,9 +228,16 @@ export default function Timeline() {
     );
   }
 
-  // 시간 계산 — 장소 체류 + 이동 시간 합산
   let cursor = startHour * 60;
-  const blocks: { type: "place" | "transit"; key: string; start: number; end: number; placeIndex?: number; fromId?: string; toId?: string }[] = [];
+  const blocks: {
+    type: "place" | "transit";
+    key: string;
+    start: number;
+    end: number;
+    placeIndex?: number;
+    fromId?: string;
+    toId?: string;
+  }[] = [];
 
   places.forEach((place, i) => {
     const start = cursor;
@@ -116,7 +249,14 @@ export default function Timeline() {
       const next = places[i + 1];
       const transit = transits.find((t) => t.fromId === place.id && t.toId === next.id);
       const tMin = transit?.minutes ?? 15;
-      blocks.push({ type: "transit", key: `${place.id}-${next.id}`, start: cursor, end: cursor + tMin, fromId: place.id, toId: next.id });
+      blocks.push({
+        type: "transit",
+        key: `${place.id}-${next.id}`,
+        start: cursor,
+        end: cursor + tMin,
+        fromId: place.id,
+        toId: next.id,
+      });
       cursor += tMin;
     }
   });
@@ -149,7 +289,7 @@ export default function Timeline() {
             const place = places[block.placeIndex!];
             return (
               <li key={block.key} className="pl-4 pb-4 relative">
-                <span className="absolute -left-[5px] top-0.5 h-2.5 w-2.5 rounded-full border-2 border-red-400 bg-white" />
+                <span className="absolute -left-1.25 top-0.5 h-2.5 w-2.5 rounded-full border-2 border-red-400 bg-white" />
                 <div className="flex items-baseline justify-between gap-2">
                   <span className="text-[11px] font-mono text-zinc-400 shrink-0">
                     {formatTime(block.start)}–{formatTime(block.end)}
@@ -166,13 +306,12 @@ export default function Timeline() {
           }
 
           return (
-            <TransitBlock key={block.key} fromId={block.fromId!} toId={block.toId!} />
+            <TransitBlock key={block.key} fromId={block.fromId!} toId={block.toId!} departureHour={startHour} />
           );
         })}
 
-        {/* 종료 시각 */}
         <li className="pl-4 relative">
-          <span className="absolute -left-[5px] top-0.5 h-2.5 w-2.5 rounded-full bg-zinc-300" />
+          <span className="absolute -left-1.25 top-0.5 h-2.5 w-2.5 rounded-full bg-zinc-300" />
           <span className="text-[11px] font-mono text-zinc-400">
             {formatTime(cursor)} 종료
           </span>

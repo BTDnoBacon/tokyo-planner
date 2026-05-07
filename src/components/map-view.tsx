@@ -14,7 +14,6 @@ import { usePlaces } from "@/lib/places-context";
 const TOKYO_CENTER = { lat: 35.6762, lng: 139.6503 };
 const MAP_ID = "tokyo-planner-map";
 
-// 클릭 좌표 → 장소명 변환 후 추가
 function MapClickHandler() {
   const map = useMap();
   const geocodingLib = useMapsLibrary("geocoding");
@@ -34,38 +33,29 @@ function MapClickHandler() {
       const lat = e.latLng.lat();
       const lng = e.latLng.lng();
 
-      // 역지오코딩으로 장소명 가져오기
-      const result = await geocoderRef.current.geocode({
-        location: { lat, lng },
-      });
+      const result = await geocoderRef.current.geocode({ location: { lat, lng } });
       const results = result.results;
       const allComponents = results.flatMap(
         (r: google.maps.GeocoderResult) => r.address_components,
       );
 
-      // 1순위: establishment/POI 타입 컴포넌트 이름 (역, 랜드마크 등)
       const poiName = allComponents.find(
         (c: google.maps.GeocoderAddressComponent) =>
-          c.types.includes("establishment") ||
-          c.types.includes("point_of_interest"),
+          c.types.includes("establishment") || c.types.includes("point_of_interest"),
       )?.long_name;
 
-      // 2순위: sublocality_level_2 (동네명) — 한국어로 오는 경우 우선
       const sublocalityName = allComponents.find(
         (c: google.maps.GeocoderAddressComponent) =>
           c.types.includes("sublocality_level_2"),
       )?.long_name;
 
-      // 3순위: locality (구명)
       const localityName = allComponents.find(
         (c: google.maps.GeocoderAddressComponent) =>
           c.types.includes("locality"),
       )?.long_name;
 
       const name =
-        poiName ??
-        sublocalityName ??
-        localityName ??
+        poiName ?? sublocalityName ?? localityName ??
         `장소 (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
 
       addPlace({ name, lat, lng, stayMinutes: 60 });
@@ -83,8 +73,7 @@ function MapClickHandler() {
 }
 
 function PlaceMarkers() {
-  const { places, removePlace } = usePlaces();
-
+  const { places } = usePlaces();
   return (
     <>
       {places.map((place) => (
@@ -105,6 +94,55 @@ function PlaceMarkers() {
   );
 }
 
+// 저장된 DirectionsResult를 지도에 렌더링
+function RouteRenderers() {
+  const map = useMap();
+  const routesLib = useMapsLibrary("routes");
+  const { directionsResults } = usePlaces();
+  const renderersRef = useRef<globalThis.Map<string, google.maps.DirectionsRenderer>>(new globalThis.Map());
+
+  useEffect(() => {
+    if (!map || !routesLib) return;
+
+    const currentKeys = new Set(Object.keys(directionsResults));
+    const existingKeys = new Set(renderersRef.current.keys());
+
+    // 삭제된 경로 renderer 제거
+    existingKeys.forEach((key) => {
+      if (!currentKeys.has(key)) {
+        renderersRef.current.get(key)?.setMap(null);
+        renderersRef.current.delete(key);
+      }
+    });
+
+    // 새 경로 renderer 추가/업데이트
+    currentKeys.forEach((key) => {
+      const dirResult = directionsResults[key];
+      if (!renderersRef.current.has(key)) {
+        const renderer = new routesLib.DirectionsRenderer({
+          suppressMarkers: true, // 핀은 PlaceMarkers에서 표시
+          polylineOptions: {
+            strokeColor: "#3b82f6",
+            strokeWeight: 4,
+            strokeOpacity: 0.8,
+          },
+        });
+        renderer.setMap(map);
+        renderersRef.current.set(key, renderer);
+      }
+      renderersRef.current.get(key)!.setDirections(dirResult);
+    });
+
+    const renderers = renderersRef.current;
+    return () => {
+      renderers.forEach((r) => r.setMap(null));
+      renderers.clear();
+    };
+  }, [map, routesLib, directionsResults]);
+
+  return null;
+}
+
 export default function MapView() {
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
 
@@ -120,6 +158,7 @@ export default function MapView() {
       >
         <MapClickHandler />
         <PlaceMarkers />
+        <RouteRenderers />
       </Map>
     </APIProvider>
   );
