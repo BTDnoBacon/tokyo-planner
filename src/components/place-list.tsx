@@ -2,6 +2,20 @@
 
 import { useState, useRef, useEffect } from "react";
 import { usePlaces } from "@/lib/places-context";
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 const STAY_OPTIONS = [30, 60, 90, 120, 180, 240] as const;
 
@@ -12,13 +26,7 @@ function formatStay(minutes: number) {
   return m === 0 ? `${h}시간` : `${h}시간 ${m}분`;
 }
 
-function PlaceNameEditor({
-  id,
-  name,
-}: {
-  id: string;
-  name: string;
-}) {
+function PlaceNameEditor({ id, name }: { id: string; name: string }) {
   const { renamePlace } = usePlaces();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(name);
@@ -31,7 +39,7 @@ function PlaceNameEditor({
   function commit() {
     const trimmed = draft.trim();
     if (trimmed && trimmed !== name) renamePlace(id, trimmed);
-    else setDraft(name); // 빈 값이면 원래 이름으로 복원
+    else setDraft(name);
     setEditing(false);
   }
 
@@ -62,8 +70,92 @@ function PlaceNameEditor({
   );
 }
 
+function SortablePlaceItem({ place }: { place: { id: string; name: string; order: number; stayMinutes: number } }) {
+  const { removePlace, updateStayMinutes } = usePlaces();
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: place.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+  };
+
+  return (
+    <li
+      ref={setNodeRef}
+      style={style}
+      className="rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2.5 animate-in fade-in slide-in-from-bottom-2 duration-200"
+    >
+      <div className="flex items-start gap-2">
+        {/* 드래그 핸들 */}
+        <button
+          {...attributes}
+          {...listeners}
+          className="mt-0.5 shrink-0 text-zinc-300 hover:text-zinc-500 cursor-grab active:cursor-grabbing touch-none"
+          aria-label="드래그해서 순서 변경"
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+            <circle cx="4" cy="3" r="1.2" />
+            <circle cx="10" cy="3" r="1.2" />
+            <circle cx="4" cy="7" r="1.2" />
+            <circle cx="10" cy="7" r="1.2" />
+            <circle cx="4" cy="11" r="1.2" />
+            <circle cx="10" cy="11" r="1.2" />
+          </svg>
+        </button>
+        <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
+          {place.order}
+        </span>
+        <PlaceNameEditor id={place.id} name={place.name} />
+        <button
+          onClick={() => removePlace(place.id)}
+          className="shrink-0 text-zinc-300 hover:text-red-400 transition-colors text-base leading-none"
+          aria-label="장소 삭제"
+        >
+          ×
+        </button>
+      </div>
+
+      <div className="mt-2 flex flex-wrap gap-1">
+        {STAY_OPTIONS.map((min) => (
+          <button
+            key={min}
+            onClick={() => updateStayMinutes(place.id, min)}
+            className={`rounded-full px-2 py-0.5 text-xs transition-colors ${
+              place.stayMinutes === min
+                ? "bg-red-500 text-white"
+                : "bg-white border border-zinc-200 text-zinc-500 hover:border-red-300 hover:text-red-500"
+            }`}
+          >
+            {formatStay(min)}
+          </button>
+        ))}
+      </div>
+    </li>
+  );
+}
+
 export default function PlaceList() {
-  const { places, removePlace, updateStayMinutes } = usePlaces();
+  const { places, reorderPlaces } = usePlaces();
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+  );
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const fromIndex = places.findIndex((p) => p.id === active.id);
+    const toIndex = places.findIndex((p) => p.id === over.id);
+    if (fromIndex !== -1 && toIndex !== -1) reorderPlaces(fromIndex, toIndex);
+  }
 
   if (places.length === 0) {
     return (
@@ -74,45 +166,14 @@ export default function PlaceList() {
   }
 
   return (
-    <ul className="space-y-2">
-      {places.map((place) => (
-        <li
-          key={place.id}
-          className="rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2.5"
-        >
-          {/* 순서 + 이름(클릭 편집) + 삭제 */}
-          <div className="flex items-start gap-2">
-            <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
-              {place.order}
-            </span>
-            <PlaceNameEditor id={place.id} name={place.name} />
-            <button
-              onClick={() => removePlace(place.id)}
-              className="shrink-0 text-zinc-300 hover:text-red-400 transition-colors text-base leading-none"
-              aria-label="장소 삭제"
-            >
-              ×
-            </button>
-          </div>
-
-          {/* 체류 시간 선택 */}
-          <div className="mt-2 flex flex-wrap gap-1">
-            {STAY_OPTIONS.map((min) => (
-              <button
-                key={min}
-                onClick={() => updateStayMinutes(place.id, min)}
-                className={`rounded-full px-2 py-0.5 text-xs transition-colors ${
-                  place.stayMinutes === min
-                    ? "bg-red-500 text-white"
-                    : "bg-white border border-zinc-200 text-zinc-500 hover:border-red-300 hover:text-red-500"
-                }`}
-              >
-                {formatStay(min)}
-              </button>
-            ))}
-          </div>
-        </li>
-      ))}
-    </ul>
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      <SortableContext items={places.map((p) => p.id)} strategy={verticalListSortingStrategy}>
+        <ul className="space-y-2">
+          {places.map((place) => (
+            <SortablePlaceItem key={place.id} place={place} />
+          ))}
+        </ul>
+      </SortableContext>
+    </DndContext>
   );
 }

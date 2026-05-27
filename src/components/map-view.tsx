@@ -4,11 +4,10 @@ import {
   APIProvider,
   Map,
   AdvancedMarker,
-  Pin,
   useMap,
   useMapsLibrary,
 } from "@vis.gl/react-google-maps";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { usePlaces } from "@/lib/places-context";
 
 const TOKYO_CENTER = { lat: 35.6762, lng: 139.6503 };
@@ -74,20 +73,32 @@ function MapClickHandler() {
 
 function PlaceMarkers() {
   const { places } = usePlaces();
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
   return (
     <>
       {places.map((place) => (
         <AdvancedMarker
           key={place.id}
           position={{ lat: place.lat, lng: place.lng }}
-          title={place.name}
         >
-          <Pin
-            background="#ef4444"
-            borderColor="#b91c1c"
-            glyphColor="#fff"
-            glyph={String(place.order)}
-          />
+          <div
+            className="relative flex flex-col items-center"
+            onMouseEnter={() => setHoveredId(place.id)}
+            onMouseLeave={() => setHoveredId(null)}
+          >
+            {hoveredId === place.id && (
+              <div className="absolute bottom-full mb-1.5 whitespace-nowrap rounded-lg bg-zinc-800 px-2.5 py-1.5 text-xs text-white shadow-lg pointer-events-none z-10">
+                {place.name}
+                <div className="absolute left-1/2 top-full -translate-x-1/2 border-4 border-transparent border-t-zinc-800" />
+              </div>
+            )}
+            {/* 커스텀 핀 — Pin 컴포넌트 대신 div로 구현해 mouse 이벤트 정상 작동 */}
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-red-500 border-2 border-red-700 text-white text-xs font-bold shadow-md">
+              {place.order}
+            </div>
+            <div className="w-0.5 h-2 bg-red-700" />
+            <div className="w-1.5 h-1.5 rounded-full bg-red-700" />
+          </div>
         </AdvancedMarker>
       ))}
     </>

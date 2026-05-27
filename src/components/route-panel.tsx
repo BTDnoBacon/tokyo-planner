@@ -14,12 +14,13 @@ function formatDate(dateStr: string) {
 }
 
 export default function RoutePanel() {
-  const { routes, saveRoute, deleteRoute, setActiveRouteId, activeRouteId } = useRoutes();
+  const { routes, saveRoute, deleteRoute, updateRoute, setActiveRouteId, activeRouteId } = useRoutes();
   const { places, transits, loadFromRoute } = usePlaces();
 
   const [saving, setSaving] = useState(false);
   const [routeName, setRouteName] = useState("");
   const [routeDate, setRouteDate] = useState(todayString());
+  const [editingDateId, setEditingDateId] = useState<string | null>(null);
 
   function handleSave() {
     if (!routeName.trim() || places.length === 0) return;
@@ -39,7 +40,7 @@ export default function RoutePanel() {
   return (
     <div className="px-4 py-3 border-b border-zinc-100">
       <div className="flex items-center justify-between mb-2">
-        <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">저장된 루트</span>
+        <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">저장된 루트</span>
         <button
           onClick={() => setSaving((v) => !v)}
           disabled={places.length === 0}
@@ -95,15 +96,34 @@ export default function RoutePanel() {
                 }`}
               >
                 <div className="flex items-start justify-between gap-2">
-                  <button
-                    onClick={() => handleLoad(route.id)}
-                    className="flex-1 text-left"
-                  >
-                    <p className="text-sm font-medium text-zinc-800 leading-snug">{route.name}</p>
-                    <p className="text-xs text-zinc-400 mt-0.5">
-                      {formatDate(route.date)} · {route.places.length}곳
-                    </p>
-                  </button>
+                  <div onClick={() => handleLoad(route.id)} className="flex-1 text-left min-w-0 cursor-pointer">
+                    <p className="text-sm font-medium text-zinc-800 leading-snug truncate">{route.name}</p>
+                    <div className="flex items-center gap-1 mt-0.5">
+                      {editingDateId === route.id ? (
+                        <input
+                          type="date"
+                          defaultValue={route.date}
+                          autoFocus
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => {
+                            if (e.target.value) updateRoute(route.id, { date: e.target.value });
+                          }}
+                          onBlur={() => setEditingDateId(null)}
+                          className="text-xs border border-zinc-300 rounded px-1 py-0.5 outline-none focus:border-red-400 bg-white"
+                        />
+                      ) : (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setEditingDateId(route.id); }}
+                          className="text-xs text-zinc-400 hover:text-red-400 transition-colors"
+                          title="날짜 수정"
+                        >
+                          {formatDate(route.date)}
+                        </button>
+                      )}
+                      <span className="text-xs text-zinc-300">·</span>
+                      <span className="text-xs text-zinc-400">{route.places.length}곳</span>
+                    </div>
+                  </div>
                   <button
                     onClick={() => deleteRoute(route.id)}
                     className="shrink-0 text-zinc-300 hover:text-red-400 transition-colors text-base leading-none mt-0.5"
