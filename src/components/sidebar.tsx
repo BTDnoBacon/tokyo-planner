@@ -3,6 +3,11 @@
 import { useState } from "react";
 import { useRoutes } from "@/lib/routes-context";
 import { usePlaces } from "@/lib/places-context";
+
+function formatDate(dateStr: string) {
+  const [y, m, d] = dateStr.split("-");
+  return `${y}.${m}.${d}`;
+}
 import PlaceList from "@/components/place-list";
 import Timeline from "@/components/timeline";
 import RoutePanel from "@/components/route-panel";
@@ -11,8 +16,9 @@ type Tab = "장소" | "타임라인";
 
 export default function Sidebar() {
   const [tab, setTab] = useState<Tab>("장소");
-  const { setActiveRouteId } = useRoutes();
+  const { setActiveRouteId, routes, activeRouteId } = useRoutes();
   const { clearAll } = usePlaces();
+  const activeRoute = routes.find((r) => r.id === activeRouteId) ?? null;
 
   function handleNewRoute() {
     setActiveRouteId(null);
@@ -32,6 +38,16 @@ export default function Sidebar() {
             + 새 루트
           </button>
         </div>
+        {activeRoute && (
+          <div className="mt-1.5 flex items-center gap-1.5">
+            <span className="h-1.5 w-1.5 rounded-full bg-red-400 shrink-0" />
+            <p className="text-xs text-zinc-500 truncate">
+              <span className="font-medium text-zinc-700">{activeRoute.name}</span>
+              <span className="mx-1 text-zinc-300">·</span>
+              {formatDate(activeRoute.date)}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* 탭 */}

@@ -16,6 +16,7 @@ interface RoutesContextValue {
   saveRoute: (name: string, date: string, places: Place[], transits: Transit[]) => Route;
   loadRoute: (id: string) => Route | null;
   deleteRoute: (id: string) => void;
+  updateRoute: (id: string, patch: Partial<Pick<Route, "name" | "date">>) => void;
   setActiveRouteId: (id: string | null) => void;
 }
 
@@ -66,9 +67,17 @@ export function RoutesProvider({ children }: { children: React.ReactNode }) {
     setActiveRouteId((prev) => (prev === id ? null : prev));
   }, []);
 
+  const updateRoute = useCallback((id: string, patch: Partial<Pick<Route, "name" | "date">>) => {
+    setRoutes((prev) => {
+      const next = prev.map((r) => (r.id === id ? { ...r, ...patch } : r));
+      saveRoutes(next);
+      return next;
+    });
+  }, []);
+
   return (
     <RoutesContext.Provider
-      value={{ routes, activeRouteId, saveRoute, loadRoute, deleteRoute, setActiveRouteId }}
+      value={{ routes, activeRouteId, saveRoute, loadRoute, deleteRoute, updateRoute, setActiveRouteId }}
     >
       {children}
     </RoutesContext.Provider>

@@ -315,6 +315,33 @@ export default function Timeline() {
           </span>
         </li>
       </ol>
+
+      {/* 요약 */}
+      {(() => {
+        const totalMinutes = cursor - startHour * 60;
+        const stayMinutes = places.reduce((s, p) => s + p.stayMinutes, 0);
+        const transitMinutes = totalMinutes - stayMinutes;
+        return (
+          <div className="mt-3 rounded-xl bg-zinc-50 border border-zinc-100 px-3 py-2.5 flex gap-4 text-xs text-zinc-500">
+            <div>
+              <p className="text-zinc-400">총 시간</p>
+              <p className="font-medium text-zinc-700 mt-0.5">{formatDuration(totalMinutes)}</p>
+            </div>
+            <div>
+              <p className="text-zinc-400">체류</p>
+              <p className="font-medium text-zinc-700 mt-0.5">{formatDuration(stayMinutes)}</p>
+            </div>
+            <div>
+              <p className="text-zinc-400">이동</p>
+              <p className="font-medium text-zinc-700 mt-0.5">{formatDuration(transitMinutes)}</p>
+            </div>
+            <div>
+              <p className="text-zinc-400">장소</p>
+              <p className="font-medium text-zinc-700 mt-0.5">{places.length}곳</p>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
