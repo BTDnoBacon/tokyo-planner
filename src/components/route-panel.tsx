@@ -96,7 +96,7 @@ export default function RoutePanel() {
                 }`}
               >
                 <div className="flex items-start justify-between gap-2">
-                  <button onClick={() => handleLoad(route.id)} className="flex-1 text-left min-w-0">
+                  <div onClick={() => handleLoad(route.id)} className="flex-1 text-left min-w-0 cursor-pointer">
                     <p className="text-sm font-medium text-zinc-800 leading-snug truncate">{route.name}</p>
                     <div className="flex items-center gap-1 mt-0.5">
                       {editingDateId === route.id ? (
@@ -123,7 +123,7 @@ export default function RoutePanel() {
                       <span className="text-xs text-zinc-300">·</span>
                       <span className="text-xs text-zinc-400">{route.places.length}곳</span>
                     </div>
-                  </button>
+                  </div>
                   <button
                     onClick={() => deleteRoute(route.id)}
                     className="shrink-0 text-zinc-300 hover:text-red-400 transition-colors text-base leading-none mt-0.5"

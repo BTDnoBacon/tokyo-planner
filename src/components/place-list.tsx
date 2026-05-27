@@ -78,7 +78,7 @@ export default function PlaceList() {
       {places.map((place) => (
         <li
           key={place.id}
-          className="rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2.5"
+          className="rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-2.5 animate-in fade-in slide-in-from-bottom-2 duration-200"
         >
           {/* 순서 + 이름(클릭 편집) + 삭제 */}
           <div className="flex items-start gap-2">

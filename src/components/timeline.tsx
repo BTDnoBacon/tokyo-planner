@@ -285,6 +285,8 @@ export default function Timeline() {
         {blocks.map((block) => {
           if (block.type === "place") {
             const place = places[block.placeIndex!];
+            const totalMinutes = cursor - startHour * 60;
+            const barWidth = totalMinutes > 0 ? Math.round((place.stayMinutes / totalMinutes) * 100) : 0;
             return (
               <li key={block.key} className="pl-4 pb-4 relative">
                 <span className="absolute -left-1.25 top-0.5 h-2.5 w-2.5 rounded-full border-2 border-red-400 bg-white" />
@@ -299,6 +301,12 @@ export default function Timeline() {
                 <p className="text-sm font-medium text-zinc-800 mt-0.5 leading-snug">
                   {place.name}
                 </p>
+                <div className="mt-1.5 h-1 w-full rounded-full bg-zinc-100">
+                  <div
+                    className="h-1 rounded-full bg-red-300 transition-all duration-500"
+                    style={{ width: `${barWidth}%` }}
+                  />
+                </div>
               </li>
             );
           }

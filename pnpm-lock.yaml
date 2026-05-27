@@ -17,6 +17,9 @@ dependencies:
   react-dom:
     specifier: 19.2.4
     version: 19.2.4(react@19.2.4)
+  tailwindcss-animate:
+    specifier: ^1.0.7
+    version: 1.0.7(tailwindcss@4.2.2)
 
 devDependencies:
   '@tailwindcss/postcss':
@@ -3392,9 +3395,16 @@ packages:
     engines: {node: '>= 0.4'}
     dev: true
 
+  /tailwindcss-animate@1.0.7(tailwindcss@4.2.2):
+    resolution: {integrity: sha512-bl6mpH3T7I3UFxuvDEXLxy/VuFxBk5bbzplh7tXI68mwMokNYd1t9qPBHlnyTwfa4JGC4zP516I1hYYtQ/vspA==}
+    peerDependencies:
+      tailwindcss: '>=3.0.0 || insiders'
+    dependencies:
+      tailwindcss: 4.2.2
+    dev: false
+
   /tailwindcss@4.2.2:
     resolution: {integrity: sha512-KWBIxs1Xb6NoLdMVqhbhgwZf2PGBpPEiwOqgI4pFIYbNTfBXiKYyWoTsXgBQ9WFg/OlhnvHaY+AEpW7wSmFo2Q==}
-    dev: true
 
   /tapable@2.3.2:
     resolution: {integrity: sha512-1MOpMXuhGzGL5TTCZFItxCc0AARf1EZFQkGqMm7ERKj8+Hgr5oLvJOVFcC+lRmR8hCe2S3jC4T5D7Vg/d7/fhA==}
