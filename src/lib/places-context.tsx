@@ -10,6 +10,7 @@ interface PlacesContextValue {
   transitSteps: Record<string, TransitStep[]>;
   addPlace: (place: Omit<Place, "id" | "order">) => void;
   removePlace: (id: string) => void;
+  reorderPlaces: (fromIndex: number, toIndex: number) => void;
   updateStayMinutes: (id: string, minutes: number) => void;
   renamePlace: (id: string, name: string) => void;
   updateTransit: (fromId: string, toId: string, mode: TransportMode, minutes: number) => void;
@@ -54,6 +55,18 @@ export function PlacesProvider({ children }: { children: React.ReactNode }) {
       });
       return next;
     });
+  }, []);
+
+  const reorderPlaces = useCallback((fromIndex: number, toIndex: number) => {
+    setPlaces((prev) => {
+      const next = [...prev];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return next.map((p, i) => ({ ...p, order: i + 1 }));
+    });
+    // 순서 바뀌면 경로/steps 초기화
+    setDirectionsResults({});
+    setTransitStepsState({});
   }, []);
 
   const updateStayMinutes = useCallback((id: string, minutes: number) => {
@@ -131,7 +144,7 @@ export function PlacesProvider({ children }: { children: React.ReactNode }) {
     <PlacesContext.Provider
       value={{
         places, transits, directionsResults, transitSteps,
-        addPlace, removePlace, updateStayMinutes, renamePlace,
+        addPlace, removePlace, reorderPlaces, updateStayMinutes, renamePlace,
         updateTransit, setDirectionsResult, setTransitSteps, loadFromRoute, clearAll,
       }}
     >
