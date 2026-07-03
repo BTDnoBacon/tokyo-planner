@@ -301,6 +301,11 @@ export default function Timeline() {
                 <p className="text-sm font-medium text-zinc-800 mt-0.5 leading-snug">
                   {place.name}
                 </p>
+                {place.memo && (
+                  <p className="text-xs text-zinc-400 mt-0.5 leading-snug break-words">
+                    {place.memo}
+                  </p>
+                )}
                 <div className="mt-1.5 h-1 w-full rounded-full bg-zinc-100">
                   <div
                     className="h-1 rounded-full bg-red-300 transition-all duration-500"
