@@ -70,7 +70,71 @@ function PlaceNameEditor({ id, name }: { id: string; name: string }) {
   );
 }
 
-function SortablePlaceItem({ place }: { place: { id: string; name: string; order: number; stayMinutes: number } }) {
+function PlaceMemoEditor({ id, memo }: { id: string; memo?: string }) {
+  const { updateMemo } = usePlaces();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(memo ?? "");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing) inputRef.current?.select();
+  }, [editing]);
+
+  function commit() {
+    updateMemo(id, draft);
+    setEditing(false);
+  }
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        value={draft}
+        maxLength={100}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") commit();
+          if (e.key === "Escape") { setDraft(memo ?? ""); setEditing(false); }
+        }}
+        placeholder="메모 입력 (최대 100자)"
+        className="mt-1.5 w-full text-xs text-zinc-600 bg-white border border-zinc-300 rounded px-1.5 py-0.5 outline-none focus:border-red-400"
+      />
+    );
+  }
+
+  if (!memo) {
+    return (
+      <button
+        onClick={() => { setDraft(""); setEditing(true); }}
+        className="mt-1.5 text-xs text-zinc-400 hover:text-red-500 transition-colors"
+      >
+        + 메모 추가
+      </button>
+    );
+  }
+
+  return (
+    <div className="mt-1.5 flex items-start gap-1">
+      <button
+        onClick={() => { setDraft(memo); setEditing(true); }}
+        className="flex-1 min-w-0 text-left text-xs text-zinc-500 break-all hover:text-red-500 transition-colors"
+        title="클릭해서 메모 수정"
+      >
+        {memo}
+      </button>
+      <button
+        onClick={() => updateMemo(id, "")}
+        className="shrink-0 text-zinc-300 hover:text-red-400 transition-colors text-sm leading-none"
+        aria-label="메모 삭제"
+      >
+        ×
+      </button>
+    </div>
+  );
+}
+
+function SortablePlaceItem({ place }: { place: { id: string; name: string; order: number; stayMinutes: number; memo?: string } }) {
   const { removePlace, updateStayMinutes } = usePlaces();
   const {
     attributes,
@@ -138,6 +202,8 @@ function SortablePlaceItem({ place }: { place: { id: string; name: string; order
           </button>
         ))}
       </div>
+
+      <PlaceMemoEditor id={place.id} memo={place.memo} />
     </li>
   );
 }
