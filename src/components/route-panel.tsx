@@ -24,7 +24,7 @@ export default function RoutePanel() {
 
   function handleSave() {
     if (!routeName.trim() || places.length === 0) return;
-    const route = saveRoute(routeName.trim(), routeDate, places, transits);
+    const route = saveRoute(routeName.trim(), routeDate, [{ places, transits }]);
     setActiveRouteId(route.id);
     setSaving(false);
     setRouteName("");
@@ -33,7 +33,8 @@ export default function RoutePanel() {
   function handleLoad(id: string) {
     const route = routes.find((r) => r.id === id);
     if (!route) return;
-    loadFromRoute(route.places, route.transits);
+    const day = route.days[0] ?? { places: [], transits: [] };
+    loadFromRoute(day.places, day.transits);
     setActiveRouteId(id);
   }
 
@@ -121,7 +122,7 @@ export default function RoutePanel() {
                         </button>
                       )}
                       <span className="text-xs text-zinc-300">·</span>
-                      <span className="text-xs text-zinc-400">{route.places.length}곳</span>
+                      <span className="text-xs text-zinc-400">{route.days.reduce((sum, day) => sum + day.places.length, 0)}곳</span>
                     </div>
                   </div>
                   <button

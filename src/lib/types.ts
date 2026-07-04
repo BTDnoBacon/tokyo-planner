@@ -26,11 +26,15 @@ export interface TransitStep {
   color?: string;
 }
 
+export interface DayPlan {
+  places: Place[];
+  transits: Transit[];
+}
+
 export interface Route {
   id: string;
   name: string;
   date: string;    // "YYYY-MM-DD"
-  places: Place[];
-  transits: Transit[];
+  days: DayPlan[];
   createdAt: number;
 }
