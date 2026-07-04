@@ -13,6 +13,7 @@ interface PlacesContextValue {
   reorderPlaces: (fromIndex: number, toIndex: number) => void;
   updateStayMinutes: (id: string, minutes: number) => void;
   renamePlace: (id: string, name: string) => void;
+  updateMemo: (id: string, memo: string) => void;
   updateTransit: (fromId: string, toId: string, mode: TransportMode, minutes: number) => void;
   setDirectionsResult: (fromId: string, toId: string, result: google.maps.DirectionsResult | null) => void;
   setTransitSteps: (fromId: string, toId: string, steps: TransitStep[] | null) => void;
@@ -81,6 +82,15 @@ export function PlacesProvider({ children }: { children: React.ReactNode }) {
     );
   }, []);
 
+  const updateMemo = useCallback((id: string, memo: string) => {
+    const trimmed = memo.trim();
+    setPlaces((prev) =>
+      prev.map((p) =>
+        p.id === id ? { ...p, memo: trimmed === "" ? undefined : trimmed } : p
+      )
+    );
+  }, []);
+
   const updateTransit = useCallback(
     (fromId: string, toId: string, mode: TransportMode, minutes: number) => {
       setTransits((prev) => {
@@ -144,7 +154,7 @@ export function PlacesProvider({ children }: { children: React.ReactNode }) {
     <PlacesContext.Provider
       value={{
         places, transits, directionsResults, transitSteps,
-        addPlace, removePlace, reorderPlaces, updateStayMinutes, renamePlace,
+        addPlace, removePlace, reorderPlaces, updateStayMinutes, renamePlace, updateMemo,
         updateTransit, setDirectionsResult, setTransitSteps, loadFromRoute, clearAll,
       }}
     >

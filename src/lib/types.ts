@@ -5,6 +5,7 @@ export interface Place {
   lng: number;
   stayMinutes: number;
   order: number;
+  memo?: string;
 }
 
 export type TransportMode = "walk" | "transit" | "taxi";
