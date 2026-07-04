@@ -15,16 +15,19 @@ function formatDate(dateStr: string) {
 
 export default function RoutePanel() {
   const { routes, saveRoute, deleteRoute, updateRoute, setActiveRouteId, activeRouteId } = useRoutes();
-  const { places, transits, loadFromRoute } = usePlaces();
+  const { days, loadFromDays } = usePlaces();
 
   const [saving, setSaving] = useState(false);
   const [routeName, setRouteName] = useState("");
   const [routeDate, setRouteDate] = useState(todayString());
   const [editingDateId, setEditingDateId] = useState<string | null>(null);
 
+  // 전체 일차 통틀어 장소 수 — 저장 버튼 활성 조건
+  const totalPlaceCount = days.reduce((sum, day) => sum + day.places.length, 0);
+
   function handleSave() {
-    if (!routeName.trim() || places.length === 0) return;
-    const route = saveRoute(routeName.trim(), routeDate, places, transits);
+    if (!routeName.trim() || totalPlaceCount === 0) return;
+    const route = saveRoute(routeName.trim(), routeDate, days);
     setActiveRouteId(route.id);
     setSaving(false);
     setRouteName("");
@@ -33,7 +36,7 @@ export default function RoutePanel() {
   function handleLoad(id: string) {
     const route = routes.find((r) => r.id === id);
     if (!route) return;
-    loadFromRoute(route.places, route.transits);
+    loadFromDays(route.days);
     setActiveRouteId(id);
   }
 
@@ -43,7 +46,7 @@ export default function RoutePanel() {
         <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">저장된 루트</span>
         <button
           onClick={() => setSaving((v) => !v)}
-          disabled={places.length === 0}
+          disabled={totalPlaceCount === 0}
           className="text-xs px-2 py-0.5 rounded-full bg-red-500 text-white hover:bg-red-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {saving ? "취소" : "+ 저장"}
@@ -121,7 +124,9 @@ export default function RoutePanel() {
                         </button>
                       )}
                       <span className="text-xs text-zinc-300">·</span>
-                      <span className="text-xs text-zinc-400">{route.places.length}곳</span>
+                      <span className="text-xs text-zinc-400">
+                        {route.days.length}일차 · {route.days.reduce((sum, day) => sum + day.places.length, 0)}곳
+                      </span>
                     </div>
                   </div>
                   <button

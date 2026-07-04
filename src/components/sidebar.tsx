@@ -11,6 +11,7 @@ function formatDate(dateStr: string) {
 import PlaceList from "@/components/place-list";
 import Timeline from "@/components/timeline";
 import RoutePanel from "@/components/route-panel";
+import DayTabs from "@/components/day-tabs";
 
 type Tab = "장소" | "타임라인";
 
@@ -66,6 +67,9 @@ export default function Sidebar() {
           </button>
         ))}
       </div>
+
+      {/* 일차 탭 */}
+      <DayTabs />
 
       {/* 탭 컨텐츠 */}
       <div className="flex-1 overflow-y-auto">

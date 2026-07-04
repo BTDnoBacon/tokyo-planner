@@ -134,6 +134,36 @@ function PlaceMemoEditor({ id, memo }: { id: string; memo?: string }) {
   );
 }
 
+function MoveDaySelect({ placeId }: { placeId: string }) {
+  const { days, activeDayIndex, movePlaceToDay } = usePlaces();
+
+  // 일차가 1개면 이동 UI 미노출
+  if (days.length < 2) return null;
+
+  return (
+    <select
+      value=""
+      onChange={(e) => {
+        const idx = Number(e.target.value);
+        if (!Number.isNaN(idx)) movePlaceToDay(placeId, idx);
+      }}
+      aria-label="다른 일차로 이동"
+      className="rounded-full border border-zinc-200 bg-white px-2 py-0.5 text-xs text-zinc-500 hover:border-red-300 hover:text-red-500 transition-colors cursor-pointer outline-none focus:border-red-400"
+    >
+      <option value="" disabled>
+        Day 이동
+      </option>
+      {days.map((_, i) =>
+        i === activeDayIndex ? null : (
+          <option key={i} value={i}>
+            Day {i + 1}으로
+          </option>
+        )
+      )}
+    </select>
+  );
+}
+
 function SortablePlaceItem({ place }: { place: { id: string; name: string; order: number; stayMinutes: number; memo?: string } }) {
   const { removePlace, updateStayMinutes } = usePlaces();
   const {
@@ -201,6 +231,7 @@ function SortablePlaceItem({ place }: { place: { id: string; name: string; order
             {formatStay(min)}
           </button>
         ))}
+        <MoveDaySelect placeId={place.id} />
       </div>
 
       <PlaceMemoEditor id={place.id} memo={place.memo} />

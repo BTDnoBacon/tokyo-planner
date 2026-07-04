@@ -7,13 +7,13 @@ import {
   useCallback,
   useEffect,
 } from "react";
-import type { Route, Place, Transit } from "./types";
+import type { Route, DayPlan } from "./types";
 import { loadRoutes, saveRoutes } from "./storage";
 
 interface RoutesContextValue {
   routes: Route[];
   activeRouteId: string | null;
-  saveRoute: (name: string, date: string, places: Place[], transits: Transit[]) => Route;
+  saveRoute: (name: string, date: string, days: DayPlan[]) => Route;
   loadRoute: (id: string) => Route | null;
   deleteRoute: (id: string) => void;
   updateRoute: (id: string, patch: Partial<Pick<Route, "name" | "date">>) => void;
@@ -32,13 +32,12 @@ export function RoutesProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const saveRoute = useCallback(
-    (name: string, date: string, places: Place[], transits: Transit[]): Route => {
+    (name: string, date: string, days: DayPlan[]): Route => {
       const route: Route = {
         id: crypto.randomUUID(),
         name,
         date,
-        places,
-        transits,
+        days,
         createdAt: Date.now(),
       };
       setRoutes((prev) => {
