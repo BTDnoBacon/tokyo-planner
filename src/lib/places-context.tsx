@@ -23,7 +23,6 @@ interface PlacesContextValue {
   removeDay: (index: number) => void;
   setActiveDay: (index: number) => void;
   loadFromDays: (days: DayPlan[]) => void;
-  loadFromRoute: (places: Place[], transits: Transit[]) => void;
   clearAll: () => void;
 }
 
@@ -227,16 +226,6 @@ export function PlacesProvider({ children }: { children: React.ReactNode }) {
     setTransitStepsState({});
   }, []);
 
-  // route-panel이 아직 사용 — 단일 일차로 전체 교체 (TASK-004에서 제거 예정)
-  const loadFromRoute = useCallback((newPlaces: Place[], newTransits: Transit[]) => {
-    setPlan({
-      days: [{ places: newPlaces, transits: newTransits }],
-      activeDayIndex: 0,
-    });
-    setDirectionsResults({});
-    setTransitStepsState({});
-  }, []);
-
   const clearAll = useCallback(() => {
     setPlan({ days: [createEmptyDay()], activeDayIndex: 0 });
     setDirectionsResults({});
@@ -249,7 +238,7 @@ export function PlacesProvider({ children }: { children: React.ReactNode }) {
         places, transits, days, activeDayIndex, directionsResults, transitSteps,
         addPlace, removePlace, reorderPlaces, updateStayMinutes, renamePlace, updateMemo,
         updateTransit, setDirectionsResult, setTransitSteps,
-        addDay, removeDay, setActiveDay, loadFromDays, loadFromRoute, clearAll,
+        addDay, removeDay, setActiveDay, loadFromDays, clearAll,
       }}
     >
       {children}
