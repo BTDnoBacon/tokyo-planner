@@ -19,6 +19,7 @@ interface PlacesContextValue {
   updateTransit: (fromId: string, toId: string, mode: TransportMode, minutes: number) => void;
   setDirectionsResult: (fromId: string, toId: string, result: google.maps.DirectionsResult | null) => void;
   setTransitSteps: (fromId: string, toId: string, steps: TransitStep[] | null) => void;
+  movePlaceToDay: (placeId: string, targetDayIndex: number) => void;
   addDay: () => void;
   removeDay: (index: number) => void;
   setActiveDay: (index: number) => void;
@@ -175,6 +176,63 @@ export function PlacesProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
+  const movePlaceToDay = useCallback((placeId: string, targetDayIndex: number) => {
+    // 렌더 상태 선가드 — no-op 케이스(동일 일차/범위 밖/장소 없음)에는 캐시도 건드리지 않음
+    if (
+      targetDayIndex === activeDayIndex ||
+      targetDayIndex < 0 ||
+      targetDayIndex >= days.length ||
+      !places.some((p) => p.id === placeId)
+    ) return;
+    // 원 일차 제거 + 대상 일차 append를 단일 함수형 업데이트로 원자 처리
+    setPlan((prev) => {
+      const from = prev.activeDayIndex;
+      if (targetDayIndex === from || targetDayIndex < 0 || targetDayIndex >= prev.days.length) {
+        return prev;
+      }
+      const sourceDay = prev.days[from];
+      const moved = sourceDay?.places.find((p) => p.id === placeId);
+      if (!moved) return prev;
+      return {
+        ...prev,
+        days: prev.days.map((day, i) => {
+          if (i === from) {
+            // removePlace와 동일한 정리: 관련 transit 제거 + order 재부여
+            return {
+              places: day.places
+                .filter((p) => p.id !== placeId)
+                .map((p, idx) => ({ ...p, order: idx + 1 })),
+              transits: day.transits.filter((t) => t.fromId !== placeId && t.toId !== placeId),
+            };
+          }
+          if (i === targetDayIndex) {
+            // 대상 일차 끝에 append (memo/stayMinutes 유지, order 재부여)
+            return {
+              ...day,
+              places: [...day.places, { ...moved, order: day.places.length + 1 }],
+            };
+          }
+          return day;
+        }),
+      };
+    });
+    // removePlace와 동일한 캐시 정리 — 이동한 장소와 연결된 경로/steps 제거
+    setDirectionsResults((prev) => {
+      const next = { ...prev };
+      Object.keys(next).forEach((key) => {
+        if (key.startsWith(placeId) || key.endsWith(placeId)) delete next[key];
+      });
+      return next;
+    });
+    setTransitStepsState((prev) => {
+      const next = { ...prev };
+      Object.keys(next).forEach((key) => {
+        if (key.startsWith(placeId) || key.endsWith(placeId)) delete next[key];
+      });
+      return next;
+    });
+  }, [days.length, activeDayIndex, places]);
+
   const addDay = useCallback(() => {
     setPlan((prev) => ({
       days: [...prev.days, createEmptyDay()],
@@ -238,7 +296,7 @@ export function PlacesProvider({ children }: { children: React.ReactNode }) {
         places, transits, days, activeDayIndex, directionsResults, transitSteps,
         addPlace, removePlace, reorderPlaces, updateStayMinutes, renamePlace, updateMemo,
         updateTransit, setDirectionsResult, setTransitSteps,
-        addDay, removeDay, setActiveDay, loadFromDays, clearAll,
+        movePlaceToDay, addDay, removeDay, setActiveDay, loadFromDays, clearAll,
       }}
     >
       {children}
