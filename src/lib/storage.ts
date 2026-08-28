@@ -71,7 +71,10 @@ export function loadDraft(): DraftPlan | null {
     return {
       days,
       activeDayIndex: Math.min(Math.max(idx, 0), days.length - 1),
-      startHour: typeof parsed.startHour === "number" ? parsed.startHour : 9,
+      startHour:
+        typeof parsed.startHour === "number" && Number.isFinite(parsed.startHour)
+          ? Math.min(23, Math.max(0, Math.round(parsed.startHour)))
+          : 9,
     };
   } catch {
     return null;

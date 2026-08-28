@@ -69,7 +69,10 @@ function TransitBlock({
   departureHour: number;
   travelDate?: string;
 }) {
-  const { places, transits, transitSteps, updateTransit, setDirectionsResult, setTransitSteps, setTransitPaths } = usePlaces();
+  const {
+    places, transits, transitSteps, activeDayIndex,
+    updateTransit, setSegmentForDay, setDirectionsResult, setTransitSteps, setTransitPaths,
+  } = usePlaces();
   const transit = transits.find((t) => t.fromId === fromId && t.toId === toId);
   const steps = transitSteps[`${fromId}-${toId}`] ?? null;
   const [isPending, startTransition] = useTransition();
@@ -81,10 +84,12 @@ function TransitBlock({
 
   // 모드 칩 클릭 = 그 수단으로 즉시 재계산 (자체 엔진이라 비용 없음 — 별도 버튼 불필요)
   function handleModeClick(mode: TransportMode) {
+    if (mode === currentMode) return; // 같은 모드 재클릭은 no-op (수동 분 입력 보호)
     const from = places.find((p) => p.id === fromId);
     const to = places.find((p) => p.id === toId);
     if (!from || !to) return;
 
+    const day = activeDayIndex; // 결과는 클릭 시점의 일차에 기록
     setAutoError(null);
     setShowSteps(false);
     setDirectionsResult(fromId, toId, null);
@@ -94,17 +99,17 @@ function TransitBlock({
     startTransition(async () => {
       const result = await computeSegment(mode, from, to, departureHour, travelDate);
       if (!result.ok) {
+        // 항목을 만들지 않는다 — 가짜 시간이 일정에 섞이지 않게 (기존 값 유지)
         setAutoError(result.error);
-        updateTransit(fromId, toId, mode, transit?.minutes ?? 15); // 수동 입력이라도 가능하게
         return;
       }
-      updateTransit(fromId, toId, mode, result.data.minutes);
+      setSegmentForDay(day, fromId, toId, mode, result.data.minutes);
       if (result.data.steps && result.data.steps.length > 0) {
-        setTransitSteps(fromId, toId, result.data.steps);
+        setTransitSteps(fromId, toId, result.data.steps, day);
         setShowSteps(true);
       }
       if (result.data.paths && result.data.paths.length > 0) {
-        setTransitPaths(fromId, toId, result.data.paths);
+        setTransitPaths(fromId, toId, result.data.paths, day);
       }
 
       // 도보는 구글 SDK가 로드돼 있으면 지도에 정밀 경로 표시 (실패해도 무시)
@@ -118,7 +123,7 @@ function TransitBlock({
             },
             (sdkResult, status) => {
               if (status === google.maps.DirectionsStatus.OK && sdkResult) {
-                setDirectionsResult(fromId, toId, sdkResult);
+                setDirectionsResult(fromId, toId, sdkResult, day);
               }
             }
           );
@@ -148,7 +153,8 @@ function TransitBlock({
                 <button
                   key={opt.mode}
                   onClick={() => handleModeClick(opt.mode)}
-                  className={`rounded px-2 py-0.5 text-sm transition-colors ${
+                  disabled={isPending}
+                  className={`rounded px-2 py-0.5 text-sm transition-colors disabled:opacity-50 ${
                     currentMode === opt.mode
                       ? "bg-zinc-700 text-white"
                       : "text-zinc-400 hover:text-zinc-600"

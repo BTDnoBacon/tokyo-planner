@@ -39,7 +39,22 @@ export function walkEstimate(from: Place, to: Place): SegmentResult {
   };
 }
 
+/** 예외를 던지지 않는다 — 서버 액션 rejection 등은 {ok:false}로 정규화 (호출부 try/catch 불필요) */
 export async function computeSegment(
+  mode: TransportMode,
+  from: Place,
+  to: Place,
+  departureHour: number,
+  travelDate?: string
+): Promise<SegmentResponse> {
+  try {
+    return await computeSegmentInner(mode, from, to, departureHour, travelDate);
+  } catch {
+    return { ok: false, error: "경로 계산 중 네트워크 오류가 발생했습니다." };
+  }
+}
+
+async function computeSegmentInner(
   mode: TransportMode,
   from: Place,
   to: Place,

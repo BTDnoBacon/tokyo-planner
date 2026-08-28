@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useCallback, useEffect } from "react";
+import { createContext, useContext, useState, useCallback, useEffect, useRef } from "react";
 import type { DayPlan, Place, Transit, TransportMode, TransitStep } from "./types";
 import type { TransitPath } from "./engine/geo";
 import { loadDraft, saveDraft } from "./storage";
@@ -22,9 +22,23 @@ interface PlacesContextValue {
   renamePlace: (id: string, name: string) => void;
   updateMemo: (id: string, memo: string) => void;
   updateTransit: (fromId: string, toId: string, mode: TransportMode, minutes: number) => void;
-  setDirectionsResult: (fromId: string, toId: string, result: google.maps.DirectionsResult | null) => void;
-  setTransitSteps: (fromId: string, toId: string, steps: TransitStep[] | null) => void;
-  setTransitPaths: (fromId: string, toId: string, paths: TransitPath[] | null) => void;
+  /**
+   * 일차 지정 구간 쓰기 — 비동기 계산 결과용. 결과가 도착한 시점의 활성 일차가 아니라
+   * 계산을 시작한 일차에 기록된다. onlyIfAbsent면 이미 항목이 있는 구간(사용자 선택 포함)을
+   * 보호하기 위해 no-op.
+   */
+  setSegmentForDay: (
+    dayIndex: number,
+    fromId: string,
+    toId: string,
+    mode: TransportMode,
+    minutes: number,
+    opts?: { onlyIfAbsent?: boolean }
+  ) => void;
+  /** forDay를 주면 그 일차가 여전히 활성일 때만 캐시에 기록 (늦게 도착한 결과의 오염 방지) */
+  setDirectionsResult: (fromId: string, toId: string, result: google.maps.DirectionsResult | null, forDay?: number) => void;
+  setTransitSteps: (fromId: string, toId: string, steps: TransitStep[] | null, forDay?: number) => void;
+  setTransitPaths: (fromId: string, toId: string, paths: TransitPath[] | null, forDay?: number) => void;
   movePlaceToDay: (placeId: string, targetDayIndex: number) => void;
   addDay: () => void;
   removeDay: (index: number) => void;
@@ -80,6 +94,12 @@ export function PlacesProvider({ children }: { children: React.ReactNode }) {
   const activeDay = days[activeDayIndex] ?? EMPTY_DAY;
   const places = activeDay.places;
   const transits = activeDay.transits;
+
+  // 비동기 결과 도착 시점의 활성 일차 확인용 (캐시 쓰기 가드)
+  const activeDayRef = useRef(activeDayIndex);
+  useEffect(() => {
+    activeDayRef.current = activeDayIndex;
+  }, [activeDayIndex]);
 
   // 경로 캐시(지도 경로/전철 상세/폴리라인) 정리 헬퍼
   const clearCachesFor = useCallback((placeId: string) => {
@@ -179,8 +199,41 @@ export function PlacesProvider({ children }: { children: React.ReactNode }) {
     [updateActiveDay]
   );
 
+  const setSegmentForDay = useCallback(
+    (
+      dayIndex: number,
+      fromId: string,
+      toId: string,
+      mode: TransportMode,
+      minutes: number,
+      opts?: { onlyIfAbsent?: boolean }
+    ) => {
+      setPlan((prev) => {
+        const day = prev.days[dayIndex];
+        if (!day) return prev;
+        const exists = day.transits.findIndex((t) => t.fromId === fromId && t.toId === toId);
+        if (exists >= 0 && opts?.onlyIfAbsent) return prev; // 기존 항목(사용자 선택) 보호
+        // 해당 장소들이 아직 그 일차에 있는지 확인 (이동/삭제됐으면 폐기)
+        if (!day.places.some((p) => p.id === fromId) || !day.places.some((p) => p.id === toId)) {
+          return prev;
+        }
+        const entry = { fromId, toId, mode, minutes };
+        const transits =
+          exists >= 0
+            ? day.transits.map((t, i) => (i === exists ? entry : t))
+            : [...day.transits, entry];
+        return {
+          ...prev,
+          days: prev.days.map((d, i) => (i === dayIndex ? { ...d, transits } : d)),
+        };
+      });
+    },
+    []
+  );
+
   const setDirectionsResult = useCallback(
-    (fromId: string, toId: string, result: google.maps.DirectionsResult | null) => {
+    (fromId: string, toId: string, result: google.maps.DirectionsResult | null, forDay?: number) => {
+      if (forDay !== undefined && forDay !== activeDayRef.current) return;
       setDirectionsResults((prev) => {
         const key = `${fromId}-${toId}`;
         if (result === null) {
@@ -195,7 +248,8 @@ export function PlacesProvider({ children }: { children: React.ReactNode }) {
   );
 
   const setTransitSteps = useCallback(
-    (fromId: string, toId: string, steps: TransitStep[] | null) => {
+    (fromId: string, toId: string, steps: TransitStep[] | null, forDay?: number) => {
+      if (forDay !== undefined && forDay !== activeDayRef.current) return;
       setTransitStepsState((prev) => {
         const key = `${fromId}-${toId}`;
         if (steps === null) {
@@ -214,7 +268,8 @@ export function PlacesProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const setTransitPaths = useCallback(
-    (fromId: string, toId: string, paths: TransitPath[] | null) => {
+    (fromId: string, toId: string, paths: TransitPath[] | null, forDay?: number) => {
+      if (forDay !== undefined && forDay !== activeDayRef.current) return;
       setTransitPathsState((prev) => {
         const key = `${fromId}-${toId}`;
         if (paths === null) {
@@ -332,7 +387,7 @@ export function PlacesProvider({ children }: { children: React.ReactNode }) {
         places, transits, days, activeDayIndex, startHour, setStartHour,
         directionsResults, transitSteps, transitPaths,
         addPlace, removePlace, reorderPlaces, updateStayMinutes, renamePlace, updateMemo,
-        updateTransit, setDirectionsResult, setTransitSteps, setTransitPaths,
+        updateTransit, setSegmentForDay, setDirectionsResult, setTransitSteps, setTransitPaths,
         movePlaceToDay, addDay, removeDay, setActiveDay, loadFromDays, clearAll,
       }}
     >
