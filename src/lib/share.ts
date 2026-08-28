@@ -7,7 +7,7 @@
  */
 import type { DayPlan, TransportMode } from "./types";
 
-const HASH_PREFIX = "#plan=";
+export const HASH_PREFIX = "#plan=";
 const MODES: TransportMode[] = ["walk", "transit", "taxi"];
 
 export interface SharedPlan {
@@ -99,30 +99,28 @@ async function pipe(
   stream: { readable: ReadableStream<Uint8Array>; writable: WritableStream<BufferSource> }
 ): Promise<Uint8Array> {
   const buf = await new Response(
-    new Blob([bytes as BlobPart]).stream().pipeThrough(stream)
+    new Response(bytes as BodyInit).body!.pipeThrough(stream)
   ).arrayBuffer();
   return new Uint8Array(buf);
 }
 
+/** Compression Streams 미지원 브라우저는 공유 미지원 (버튼도 숨겨짐) */
+export function shareSupported(): boolean {
+  return typeof CompressionStream !== "undefined" && typeof DecompressionStream !== "undefined";
+}
+
 export async function encodePlanToHash(plan: SharedPlan): Promise<string> {
   const json = new TextEncoder().encode(JSON.stringify(toWire(plan)));
-  if (typeof CompressionStream !== "undefined") {
-    const compressed = await pipe(json, new CompressionStream("deflate-raw"));
-    return `${HASH_PREFIX}${bytesToBase64Url(compressed)}`;
-  }
-  // 구형 브라우저 폴백 — 비압축 (u 마커)
-  return `${HASH_PREFIX}u${bytesToBase64Url(json)}`;
+  const compressed = await pipe(json, new CompressionStream("deflate-raw"));
+  return `${HASH_PREFIX}${bytesToBase64Url(compressed)}`;
 }
 
 /** 유효하지 않으면 null (예외를 던지지 않음) */
 export async function decodePlanFromHash(hash: string): Promise<SharedPlan | null> {
-  if (!hash.startsWith(HASH_PREFIX)) return null;
+  if (!hash.startsWith(HASH_PREFIX) || !shareSupported()) return null;
   try {
     const payload = hash.slice(HASH_PREFIX.length);
-    const json =
-      payload.startsWith("u")
-        ? base64UrlToBytes(payload.slice(1))
-        : await pipe(base64UrlToBytes(payload), new DecompressionStream("deflate-raw"));
+    const json = await pipe(base64UrlToBytes(payload), new DecompressionStream("deflate-raw"));
     const wire = JSON.parse(new TextDecoder().decode(json)) as Wire;
     if (wire.v !== 1 || !Array.isArray(wire.d)) return null;
     return fromWire(wire);

@@ -12,6 +12,10 @@ interface PlacesContextValue {
   activeDayIndex: number;
   startHour: number;
   setStartHour: (hour: number) => void;
+  /** localStorage draft 복원 완료 여부 — 복원 전에 플랜을 읽고 판단하면 안 되는 소비자용 */
+  draftLoaded: boolean;
+  /** 플랜 전체 교체(loadFromDays/clearAll) 시 증가 — 교체를 "변경"으로 오인하면 안 되는 effect용 */
+  planGeneration: number;
   directionsResults: Record<string, google.maps.DirectionsResult>;
   transitSteps: Record<string, TransitStep[]>;
   transitPaths: Record<string, TransitPath[]>;
@@ -81,12 +85,17 @@ export function PlacesProvider({ children }: { children: React.ReactNode }) {
   const [transitPaths, setTransitPathsState] = useState<Record<string, TransitPath[]>>({});
   // draft 복원 완료 전에는 저장하지 않음 — 초기 빈 상태가 기존 draft를 덮어쓰는 것 방지
   const [draftLoaded, setDraftLoaded] = useState(false);
+  const [planGeneration, setPlanGeneration] = useState(0);
 
   useEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect --
        localStorage는 SSR에 없으므로 마운트 후 복원. lazy initializer는 하이드레이션 불일치 발생 */
     const draft = loadDraft();
-    if (draft) setPlan(draft);
+    if (draft) {
+      setPlan(draft);
+      // 복원도 플랜 전체 교체 — 복원된 startHour가 "시각 변경"으로 오인돼 재계산되지 않게
+      setPlanGeneration((g) => g + 1);
+    }
     setDraftLoaded(true);
     /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
@@ -390,11 +399,13 @@ export function PlacesProvider({ children }: { children: React.ReactNode }) {
       days: newDays.length > 0 ? newDays : [createEmptyDay()],
       activeDayIndex: 0,
     }));
+    setPlanGeneration((g) => g + 1);
     clearAllCaches();
   }, [clearAllCaches,]);
 
   const clearAll = useCallback(() => {
     setPlan((prev) => ({ ...prev, days: [createEmptyDay()], activeDayIndex: 0 }));
+    setPlanGeneration((g) => g + 1);
     clearAllCaches();
   }, [clearAllCaches,]);
 
@@ -402,6 +413,7 @@ export function PlacesProvider({ children }: { children: React.ReactNode }) {
     <PlacesContext.Provider
       value={{
         places, transits, days, activeDayIndex, startHour, setStartHour,
+        draftLoaded, planGeneration,
         directionsResults, transitSteps, transitPaths,
         addPlace, removePlace, reorderPlaces, updateStayMinutes, renamePlace, updateMemo,
         updateTransit, setSegmentForDay, setDirectionsResult, setTransitSteps, setTransitPaths,
