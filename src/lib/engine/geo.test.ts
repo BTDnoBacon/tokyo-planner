@@ -79,9 +79,11 @@ describe("journeyToResult", () => {
     expect(result.paths[0].color).toBe("#FF0000");
   });
 
-  it("이동 시간 = 접근 도보 + 승차구간 + 이탈 도보 (대기 제외)", () => {
-    // 120s + 20분 + 180s = 25분
-    expect(result.durationMinutes).toBe(25);
+  it("이동 시간 = 접근 도보 + 승차구간 (이탈 도보는 arrivalSecs에 이미 포함 — 이중 계산 금지)", () => {
+    // 이 픽스처의 journey는 target offset 0으로 생성 → 120s + 20분 = 22분.
+    // (프로덕션에서는 raptor가 이탈 도보를 arrivalSecs에 더해 반환한다)
+    expect(result.durationMinutes).toBe(22);
+    expect(result.endSecs).toBe(h(9, 20));
   });
 
   it("60초 이하의 도보는 step 생략", () => {

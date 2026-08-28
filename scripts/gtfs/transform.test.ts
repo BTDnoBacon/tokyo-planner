@@ -154,6 +154,25 @@ describe("serialize/deserialize 라운드트립", () => {
   });
 });
 
+describe("동일역 장거리 환승 (도쿄역 게이요선 케이스)", () => {
+  it("같은 parent_station이면 400m 반경 밖(위도 차 포함)이어도 도보 환승 연결", () => {
+    const input = makeInput();
+    // 위도 차 ~555m — 반경 프리필터를 넘는 동일역 플랫폼 쌍
+    input.stops.push(
+      { id: "K1", name: "K1", nameKo: "K1", nameEn: "K1", lat: 35.2, lon: 139.1, isStation: false, parentId: "TOKYO" },
+      { id: "K2", name: "K2", nameKo: "K2", nameEn: "K2", lat: 35.205, lon: 139.1, isStation: false, parentId: "TOKYO" }
+    );
+    const t = buildTimetable(input);
+    const k1 = t.stopIds.indexOf("K1");
+    const k2 = t.stopIds.indexOf("K2");
+    const targets = [];
+    for (let i = t.transfersIndex[k1]; i < t.transfersIndex[k1 + 1]; i++) {
+      targets.push(t.transfersTo[i]);
+    }
+    expect(targets).toContain(k2);
+  });
+});
+
 describe("거리/도보시간", () => {
   it("haversine 대략값 (신주쿠→시부야 약 3.4km)", () => {
     const d = haversineMeters(35.6896, 139.7006, 35.658, 139.7016);

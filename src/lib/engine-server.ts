@@ -8,7 +8,14 @@ import { join } from "node:path";
 import type { Timetable } from "./engine/types";
 import { deserializeTimetable } from "./engine/format";
 import { route as raptor } from "./engine/raptor";
-import { nearbyPlatforms, journeyToResult, type TransitResult } from "./engine/geo";
+import {
+  nearbyPlatforms,
+  journeyToResult,
+  distanceMeters,
+  walkSecsForMeters,
+  type TransitResult,
+} from "./engine/geo";
+import { activeServices } from "./engine/calendar";
 
 const BIN_PATH = join(process.cwd(), "data", "engine", "tokyo-rail.bin");
 /** Pareto 후보 중 선택 가중치 — 환승 1회당 이 분만큼 도착이 늦은 것으로 간주 */
@@ -32,11 +39,11 @@ function nowJst(): { date: number; secs: number } {
   };
 }
 
-function nextDay(date: number): number {
+function addDays(date: number, days: number): number {
   const y = Math.floor(date / 10000);
   const m = Math.floor((date % 10000) / 100);
   const d = date % 100;
-  const next = new Date(Date.UTC(y, m - 1, d) + 24 * 3600 * 1000);
+  const next = new Date(Date.UTC(y, m - 1, d) + days * 24 * 3600 * 1000);
   return next.getUTCFullYear() * 10000 + (next.getUTCMonth() + 1) * 100 + next.getUTCDate();
 }
 
@@ -44,12 +51,29 @@ export type TransitRouteResponse =
   | { ok: true; data: TransitResult }
   | { ok: false; error: string };
 
+/** 출발지→도착지 직접 도보 폴백 (같은 역 생활권 등 열차가 무의미한 경우) */
+const WALK_FALLBACK_MAX_M = 2000;
+
+function walkOnlyResult(meters: number, departureSecs: number): TransitResult {
+  const walkSecs = walkSecsForMeters(meters);
+  const minutes = Math.max(1, Math.ceil(walkSecs / 60));
+  return {
+    steps: [{ type: "walk", lineName: "도보", minutes }],
+    paths: [],
+    startSecs: departureSecs,
+    endSecs: departureSecs + walkSecs,
+    durationMinutes: minutes,
+  };
+}
+
 export function computeTransitRoute(
   originLat: number,
   originLng: number,
   destLat: number,
   destLng: number,
-  departureHour: number
+  departureHour: number,
+  /** 여행 날짜 "YYYY-MM-DD" — 없으면 기존 NAVITIME 동작(오늘, 지났으면 내일) */
+  travelDate?: string
 ): TransitRouteResponse {
   let tt: Timetable;
   try {
@@ -63,33 +87,60 @@ export function computeTransitRoute(
   if (sources.length === 0) return { ok: false, error: "출발지 주변 3km 내에 역이 없습니다." };
   if (targets.length === 0) return { ok: false, error: "도착지 주변 3km 내에 역이 없습니다." };
 
-  // 기존 NAVITIME 동작과 동일: 오늘 해당 시가 지났으면 다음 날로
-  const now = nowJst();
-  const date = departureHour * 3600 <= now.secs ? nextDay(now.date) : now.date;
+  let date: number;
+  if (travelDate) {
+    date = Number(travelDate.replaceAll("-", ""));
+  } else {
+    const now = nowJst();
+    date = departureHour * 3600 <= now.secs ? addDays(now.date, 1) : now.date;
+  }
+  // 심야(0~3시)는 전날 서비스일의 24h+ 시각으로 표현 (GTFS 규약)
+  let departureSecs = departureHour * 3600;
+  if (departureHour < 4) {
+    date = addDays(date, -1);
+    departureSecs += 24 * 3600;
+  }
+  if (activeServices(tt.services, date).size === 0) {
+    return { ok: false, error: "해당 날짜의 시간표가 없습니다 (데이터 갱신 필요)." };
+  }
 
+  const directMeters = distanceMeters(originLat, originLng, destLat, destLng);
+
+  // 도보 leg 없는 퇴화 케이스(출발·도착이 같은 역 등) 제외
   const journeys = raptor(tt, {
     sources: sources.map(({ stop, walkSecs }) => ({ stop, offsetSecs: walkSecs })),
     targets: targets.map(({ stop, walkSecs }) => ({ stop, offsetSecs: walkSecs })),
-    departureSecs: departureHour * 3600,
+    departureSecs,
     date,
-  });
-  if (journeys.length === 0) return { ok: false, error: "경로를 찾을 수 없습니다." };
+  }).filter((j) => j.legs.length > 0);
+
+  if (journeys.length === 0) {
+    if (directMeters <= WALK_FALLBACK_MAX_M) {
+      return { ok: true, data: walkOnlyResult(directMeters, departureSecs) };
+    }
+    return { ok: false, error: "경로를 찾을 수 없습니다." };
+  }
 
   // Pareto 후보 중 "도착시각 + 환승 페널티" 최소를 선택
+  // (arrivalSecs는 이탈 도보 offset을 이미 포함 — 추가 가산 금지)
   const sourceOffset = new Map(sources.map((s) => [s.stop, s.walkSecs]));
   const targetOffset = new Map(targets.map((s) => [s.stop, s.walkSecs]));
   let best = journeys[0];
   let bestScore = Infinity;
   for (const j of journeys) {
-    const egress = j.legs.length > 0 ? (targetOffset.get(j.legs[j.legs.length - 1].toStop) ?? 0) : 0;
-    const score = j.arrivalSecs + egress + j.transfers * TRANSFER_PENALTY_MIN * 60;
+    const score = j.arrivalSecs + j.transfers * TRANSFER_PENALTY_MIN * 60;
     if (score < bestScore) {
       bestScore = score;
       best = j;
     }
   }
-  if (best.legs.length === 0) {
-    return { ok: false, error: "출발지와 도착지가 같은 역입니다." };
+
+  // 도보가 열차보다 빠른 초근거리면 도보 폴백이 낫다
+  if (directMeters <= WALK_FALLBACK_MAX_M) {
+    const walkArrival = departureSecs + walkSecsForMeters(directMeters);
+    if (walkArrival <= best.arrivalSecs) {
+      return { ok: true, data: walkOnlyResult(directMeters, departureSecs) };
+    }
   }
 
   const access = sourceOffset.get(best.legs[0].fromStop) ?? 0;

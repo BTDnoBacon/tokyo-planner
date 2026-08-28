@@ -2,8 +2,17 @@
 
 import { useState, useTransition } from "react";
 import { usePlaces } from "@/lib/places-context";
+import { useRoutes } from "@/lib/routes-context";
 import { fetchDirections } from "@/lib/actions/directions";
 import type { TransportMode, TransitStep } from "@/lib/types";
+
+/** "YYYY-MM-DD" + n일 (일차 오프셋용) */
+function addDaysIso(dateStr: string, days: number): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d) + days * 86400000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${dt.getUTCFullYear()}-${pad(dt.getUTCMonth() + 1)}-${pad(dt.getUTCDate())}`;
+}
 
 function formatTime(totalMinutes: number) {
   const h = Math.floor(totalMinutes / 60) % 24;
@@ -67,10 +76,12 @@ function TransitBlock({
   fromId,
   toId,
   departureHour,
+  travelDate,
 }: {
   fromId: string;
   toId: string;
   departureHour: number;
+  travelDate?: string;
 }) {
   const { places, transits, transitSteps, updateTransit, setDirectionsResult, setTransitSteps, setTransitPaths } = usePlaces();
   const transit = transits.find((t) => t.fromId === fromId && t.toId === toId);
@@ -112,7 +123,7 @@ function TransitBlock({
     startTransition(async () => {
       const result = await fetchDirections(
         from.lat, from.lng, to.lat, to.lng,
-        travelMode, departureHour
+        travelMode, departureHour, travelDate
       );
 
       if (!result.ok) {
@@ -222,8 +233,13 @@ function TransitBlock({
 }
 
 export default function Timeline() {
-  const { places, transits } = usePlaces();
+  const { places, transits, activeDayIndex } = usePlaces();
+  const { routes, activeRouteId } = useRoutes();
   const [startHour, setStartHour] = useState(9);
+
+  // 활성 루트의 날짜 + 일차 → 전철 시각표 캘린더(평일/주말)에 반영
+  const activeRoute = routes.find((r) => r.id === activeRouteId) ?? null;
+  const travelDate = activeRoute ? addDaysIso(activeRoute.date, activeDayIndex) : undefined;
 
   if (places.length === 0) {
     return (
@@ -324,7 +340,7 @@ export default function Timeline() {
           }
 
           return (
-            <TransitBlock key={block.key} fromId={block.fromId!} toId={block.toId!} departureHour={startHour} />
+            <TransitBlock key={block.key} fromId={block.fromId!} toId={block.toId!} departureHour={startHour} travelDate={travelDate} />
           );
         })}
 

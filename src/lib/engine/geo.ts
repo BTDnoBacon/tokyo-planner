@@ -19,7 +19,7 @@ export function walkSecsForMeters(meters: number): number {
   return Math.round((meters * DETOUR_FACTOR) / WALK_SPEED_MPS);
 }
 
-function haversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
+export function distanceMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371000;
   const toRad = Math.PI / 180;
   const dLat = (lat2 - lat1) * toRad;
@@ -42,7 +42,7 @@ export function nearbyPlatforms(
     if (tt.stopIsStation[i]) continue;
     // 위도 선별로 haversine 호출 축소
     if (Math.abs(tt.stopLats[i] - lat) * 111000 > MAX_RADIUS_M) continue;
-    const meters = haversine(lat, lon, tt.stopLats[i], tt.stopLons[i]);
+    const meters = distanceMeters(lat, lon, tt.stopLats[i], tt.stopLons[i]);
     if (meters <= NEAR_RADIUS_M) candidates.push({ stop: i, meters });
     if (meters <= MAX_RADIUS_M && (nearest === null || meters < nearest.meters)) {
       nearest = { stop: i, meters };
@@ -129,12 +129,14 @@ export function journeyToResult(
     steps.push({ type: "walk", lineName: "도보", minutes: Math.round(egressWalkSecs / 60) });
   }
 
-  // 이동 시간 = 접근 도보 + (첫 승차 → 마지막 하차) + 이탈 도보. 첫차 대기시간은 제외.
+  // Journey.arrivalSecs는 raptor가 target offset(이탈 도보)을 이미 더한 값 —
+  // 여기서 egressWalkSecs를 또 더하면 이중 계산이므로 표시(step)에만 사용한다.
+  // 이동 시간 = 접근 도보 + (첫 승차 → 이탈 도보 완료). 첫차 대기시간은 제외.
   const startSecs = journey.departureSecs - accessWalkSecs;
-  const endSecs = journey.arrivalSecs + egressWalkSecs;
+  const endSecs = journey.arrivalSecs;
   const durationMinutes = Math.max(
     1,
-    Math.ceil((accessWalkSecs + (journey.arrivalSecs - journey.departureSecs) + egressWalkSecs) / 60)
+    Math.ceil((accessWalkSecs + (journey.arrivalSecs - journey.departureSecs)) / 60)
   );
   return { steps, paths, startSecs, endSecs, durationMinutes };
 }

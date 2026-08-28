@@ -23,18 +23,26 @@ async function fetchTransitEngine(
   originLng: number,
   destLat: number,
   destLng: number,
-  departureHour: number
+  departureHour: number,
+  travelDate?: string
 ): Promise<DirectionsResponse> {
-  const result = computeTransitRoute(originLat, originLng, destLat, destLng, departureHour);
-  if (!result.ok) return result;
-  return {
-    ok: true,
-    data: {
-      durationMinutes: result.data.durationMinutes,
-      steps: result.data.steps,
-      paths: result.data.paths,
-    },
-  };
+  try {
+    const result = computeTransitRoute(
+      originLat, originLng, destLat, destLng, departureHour, travelDate
+    );
+    if (!result.ok) return result;
+    return {
+      ok: true,
+      data: {
+        durationMinutes: result.data.durationMinutes,
+        steps: result.data.steps,
+        paths: result.data.paths,
+      },
+    };
+  } catch (err) {
+    console.error("transit engine error:", err);
+    return { ok: false, error: "경로 계산 중 오류가 발생했습니다." };
+  }
 }
 
 async function fetchGoogleRoutes(
@@ -93,10 +101,12 @@ export async function fetchDirections(
   destLat: number,
   destLng: number,
   mode: TravelMode,
-  departureHour: number
+  departureHour: number,
+  /** 여행 날짜 "YYYY-MM-DD" — transit 캘린더(평일/주말) 반영용. 없으면 오늘/내일 */
+  travelDate?: string
 ): Promise<DirectionsResponse> {
   if (mode === "transit") {
-    return fetchTransitEngine(originLat, originLng, destLat, destLng, departureHour);
+    return fetchTransitEngine(originLat, originLng, destLat, destLng, departureHour, travelDate);
   }
   return fetchGoogleRoutes(originLat, originLng, destLat, destLng, mode, departureHour);
 }

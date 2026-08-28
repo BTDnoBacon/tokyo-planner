@@ -146,8 +146,12 @@ export function runPipeline() {
   let stRows = 0;
   let badRefs = 0;
   let nonMonotonic = 0;
+  // 빈 시각(비-timepoint 행)은 GTFS상 합법이지만 우리 모델은 전 정차역 시각을 요구 —
+  // NaN이 Int32Array에서 0(자정)으로 둔갑해 탐색을 오염시키므로 해당 trip을 통째로 제외
+  const invalidTrips = new Set<string>();
   for (const rec of parseCsvRecords(read("stop_times.txt"))) {
-    const trip = tripByIdx.get(rec.get("trip_id"));
+    const tripId = rec.get("trip_id");
+    const trip = tripByIdx.get(tripId);
     const stop = stopIdx.get(rec.get("stop_id"));
     if (!trip || stop === undefined) {
       badRefs++;
@@ -155,12 +159,20 @@ export function runPipeline() {
     }
     const arr = parseGtfsTime(rec.get("arrival_time"));
     const dep = parseGtfsTime(rec.get("departure_time"));
+    if (!Number.isFinite(arr) || !Number.isFinite(dep)) {
+      invalidTrips.add(tripId);
+      continue;
+    }
     if (dep < arr) nonMonotonic++;
     trip.stopTimes.push(Number(rec.get("stop_sequence")), stop, arr, dep);
     stRows++;
   }
-  done(`${stRows} rows (참조 오류 ${badRefs}, dep<arr ${nonMonotonic})`);
+  done(`${stRows} rows (참조 오류 ${badRefs}, dep<arr ${nonMonotonic}, 시각 누락 trip ${invalidTrips.size})`);
   if (badRefs > 0) throw new Error(`stop_times에 미해결 참조 ${badRefs}건 — 데이터 확인 필요`);
+  if (invalidTrips.size > trips.length * 0.05) {
+    throw new Error(`시각 누락 trip이 ${invalidTrips.size}건 (5% 초과) — 피드 형식 변화 의심, 파이프라인 보강 필요`);
+  }
+  const validTrips = invalidTrips.size > 0 ? trips.filter((t) => !invalidTrips.has(t.id)) : trips;
 
   // ── transfers (직통운전 쌍) ──
   done = step("transfers.txt");
@@ -174,7 +186,7 @@ export function runPipeline() {
 
   // ── 변환 ──
   done = step("transform");
-  const input: GtfsInput = { stops, routes, trips, continuations, services };
+  const input: GtfsInput = { stops, routes, trips: validTrips, continuations, services };
   const timetable = buildTimetable(input);
   const nRaptorRoutes = timetable.routeStopsIndex.length - 1;
   const nTransfers = timetable.transfersTo.length;
