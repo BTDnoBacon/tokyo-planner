@@ -2,18 +2,9 @@
 
 import { useState, useTransition } from "react";
 import { usePlaces } from "@/lib/places-context";
-import { useRoutes } from "@/lib/routes-context";
-import { fetchDirections } from "@/lib/actions/directions";
-import { computeTransitLocal } from "@/lib/client-transit";
+import { useTravelDate } from "@/lib/use-travel-date";
+import { computeSegment } from "@/lib/segment-calc";
 import type { TransportMode, TransitStep } from "@/lib/types";
-
-/** "YYYY-MM-DD" + n일 (일차 오프셋용) */
-function addDaysIso(dateStr: string, days: number): string {
-  const [y, m, d] = dateStr.split("-").map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, d) + days * 86400000);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${dt.getUTCFullYear()}-${pad(dt.getUTCMonth() + 1)}-${pad(dt.getUTCDate())}`;
-}
 
 function formatTime(totalMinutes: number) {
   const h = Math.floor(totalMinutes / 60) % 24;
@@ -28,16 +19,10 @@ function formatDuration(minutes: number) {
   return m === 0 ? `${h}시간` : `${h}시간 ${m}분`;
 }
 
-const TRANSPORT_OPTIONS: {
-  mode: TransportMode;
-  icon: string;
-  label: string;
-  defaultMin: number;
-  travelMode: "walking" | "transit" | "driving";
-}[] = [
-  { mode: "walk",    icon: "🚶", label: "도보", defaultMin: 15, travelMode: "walking" },
-  { mode: "transit", icon: "🚃", label: "전철", defaultMin: 10, travelMode: "transit" },
-  { mode: "taxi",    icon: "🚕", label: "택시", defaultMin: 10, travelMode: "driving" },
+const TRANSPORT_OPTIONS: { mode: TransportMode; icon: string; label: string }[] = [
+  { mode: "walk",    icon: "🚶", label: "도보" },
+  { mode: "transit", icon: "🚃", label: "전철" },
+  { mode: "taxi",    icon: "🚕", label: "택시" },
 ];
 
 const START_HOUR_OPTIONS = [7, 8, 9, 10, 11] as const;
@@ -94,80 +79,59 @@ function TransitBlock({
   const currentMode: TransportMode = transit?.mode ?? "walk";
   const currentMin = transit?.minutes ?? 15;
 
+  // 모드 칩 클릭 = 그 수단으로 즉시 재계산 (자체 엔진이라 비용 없음 — 별도 버튼 불필요)
   function handleModeClick(mode: TransportMode) {
-    const defaultMin = TRANSPORT_OPTIONS.find((o) => o.mode === mode)!.defaultMin;
-    updateTransit(fromId, toId, mode, transit?.minutes ?? defaultMin);
-    setDirectionsResult(fromId, toId, null);
-    setTransitSteps(fromId, toId, null);
-    setTransitPaths(fromId, toId, null);
-    setAutoError(null);
-    setShowSteps(false);
-  }
-
-  function handleMinChange(raw: string) {
-    const val = parseInt(raw, 10);
-    if (!isNaN(val) && val > 0) updateTransit(fromId, toId, currentMode, val);
-  }
-
-  function handleAutoCalc() {
     const from = places.find((p) => p.id === fromId);
     const to = places.find((p) => p.id === toId);
     if (!from || !to) return;
 
-    const travelMode = TRANSPORT_OPTIONS.find((o) => o.mode === currentMode)!.travelMode;
-
     setAutoError(null);
+    setShowSteps(false);
     setDirectionsResult(fromId, toId, null);
     setTransitSteps(fromId, toId, null);
     setTransitPaths(fromId, toId, null);
 
     startTransition(async () => {
-      // 전철은 브라우저 내 엔진 우선 (최초 1회 시간표 다운로드 후 오프라인 동작) — 실패 시 서버 폴백
-      const local =
-        travelMode === "transit"
-          ? await computeTransitLocal(from.lat, from.lng, to.lat, to.lng, departureHour, travelDate)
-          : null;
-      const result =
-        local ??
-        (await fetchDirections(
-          from.lat, from.lng, to.lat, to.lng,
-          travelMode, departureHour, travelDate
-        ));
-
+      const result = await computeSegment(mode, from, to, departureHour, travelDate);
       if (!result.ok) {
         setAutoError(result.error);
+        updateTransit(fromId, toId, mode, transit?.minutes ?? 15); // 수동 입력이라도 가능하게
         return;
       }
-
-      updateTransit(fromId, toId, currentMode, result.data.durationMinutes);
-
+      updateTransit(fromId, toId, mode, result.data.minutes);
       if (result.data.steps && result.data.steps.length > 0) {
         setTransitSteps(fromId, toId, result.data.steps);
         setShowSteps(true);
       }
-
-      // 전철 구간 폴리라인 — 지도에 노선색으로 표시
       if (result.data.paths && result.data.paths.length > 0) {
         setTransitPaths(fromId, toId, result.data.paths);
       }
 
-      // 도보는 구글 SDK로 경로 지도 표시
-      if (currentMode === "walk") {
-        const service = new google.maps.DirectionsService();
-        service.route(
-          {
-            origin: { lat: from.lat, lng: from.lng },
-            destination: { lat: to.lat, lng: to.lng },
-            travelMode: google.maps.TravelMode.WALKING,
-          },
-          (sdkResult, status) => {
-            if (status === google.maps.DirectionsStatus.OK && sdkResult) {
-              setDirectionsResult(fromId, toId, sdkResult);
+      // 도보는 구글 SDK가 로드돼 있으면 지도에 정밀 경로 표시 (실패해도 무시)
+      if (mode === "walk" && typeof google !== "undefined") {
+        try {
+          new google.maps.DirectionsService().route(
+            {
+              origin: { lat: from.lat, lng: from.lng },
+              destination: { lat: to.lat, lng: to.lng },
+              travelMode: google.maps.TravelMode.WALKING,
+            },
+            (sdkResult, status) => {
+              if (status === google.maps.DirectionsStatus.OK && sdkResult) {
+                setDirectionsResult(fromId, toId, sdkResult);
+              }
             }
-          }
-        );
+          );
+        } catch {
+          /* 지도 미로드 — 근사 시간만 사용 */
+        }
       }
     });
+  }
+
+  function handleMinChange(raw: string) {
+    const val = parseInt(raw, 10);
+    if (!isNaN(val) && val > 0) updateTransit(fromId, toId, currentMode, val);
   }
 
   const currentOption = TRANSPORT_OPTIONS.find((o) => o.mode === currentMode)!;
@@ -210,24 +174,20 @@ function TransitBlock({
             <span className="text-xs text-zinc-500">{currentOption.icon} {currentOption.label}</span>
           </div>
 
-          {/* 2행: 버튼들 */}
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={handleAutoCalc}
-              disabled={isPending}
-              className="text-xs px-2.5 py-0.5 rounded-full border border-zinc-200 text-zinc-500 hover:border-zinc-400 hover:text-zinc-700 transition-colors disabled:opacity-50"
-            >
-              {isPending ? "계산 중..." : "자동 계산"}
-            </button>
-            {steps && steps.length > 0 && (
-              <button
-                onClick={() => setShowSteps((v) => !v)}
-                className="text-xs px-2.5 py-0.5 rounded-full border border-zinc-200 text-zinc-500 hover:border-zinc-400 hover:text-zinc-700 transition-colors"
-              >
-                {showSteps ? "접기" : "경로 보기"}
-              </button>
-            )}
-          </div>
+          {/* 2행: 상태/경로 보기 */}
+          {(isPending || (steps && steps.length > 0)) && (
+            <div className="flex items-center gap-1.5">
+              {isPending && <span className="text-xs text-zinc-400">계산 중…</span>}
+              {!isPending && steps && steps.length > 0 && (
+                <button
+                  onClick={() => setShowSteps((v) => !v)}
+                  className="text-xs px-2.5 py-0.5 rounded-full border border-zinc-200 text-zinc-500 hover:border-zinc-400 hover:text-zinc-700 transition-colors"
+                >
+                  {showSteps ? "접기" : "경로 보기"}
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {autoError && (
@@ -241,13 +201,9 @@ function TransitBlock({
 }
 
 export default function Timeline() {
-  const { places, transits, activeDayIndex } = usePlaces();
-  const { routes, activeRouteId } = useRoutes();
-  const [startHour, setStartHour] = useState(9);
-
+  const { places, transits, startHour, setStartHour } = usePlaces();
   // 활성 루트의 날짜 + 일차 → 전철 시각표 캘린더(평일/주말)에 반영
-  const activeRoute = routes.find((r) => r.id === activeRouteId) ?? null;
-  const travelDate = activeRoute ? addDaysIso(activeRoute.date, activeDayIndex) : undefined;
+  const travelDate = useTravelDate();
 
   if (places.length === 0) {
     return (

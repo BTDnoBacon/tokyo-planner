@@ -10,6 +10,8 @@ interface PlacesContextValue {
   transits: Transit[];
   days: DayPlan[];
   activeDayIndex: number;
+  startHour: number;
+  setStartHour: (hour: number) => void;
   directionsResults: Record<string, google.maps.DirectionsResult>;
   transitSteps: Record<string, TransitStep[]>;
   transitPaths: Record<string, TransitPath[]>;
@@ -43,12 +45,15 @@ const EMPTY_DAY: DayPlan = { places: [], transits: [] };
 interface PlanState {
   days: DayPlan[];
   activeDayIndex: number;
+  /** 타임라인 시작 시각(시) — 자동 계산의 출발 시각으로도 사용 */
+  startHour: number;
 }
 
 export function PlacesProvider({ children }: { children: React.ReactNode }) {
   const [plan, setPlan] = useState<PlanState>(() => ({
     days: [createEmptyDay()],
     activeDayIndex: 0,
+    startHour: 9,
   }));
   const [directionsResults, setDirectionsResults] = useState<Record<string, google.maps.DirectionsResult>>({});
   const [transitSteps, setTransitStepsState] = useState<Record<string, TransitStep[]>>({});
@@ -71,7 +76,7 @@ export function PlacesProvider({ children }: { children: React.ReactNode }) {
     return () => clearTimeout(timer);
   }, [plan, draftLoaded]);
 
-  const { days, activeDayIndex } = plan;
+  const { days, activeDayIndex, startHour } = plan;
   const activeDay = days[activeDayIndex] ?? EMPTY_DAY;
   const places = activeDay.places;
   const transits = activeDay.transits;
@@ -204,6 +209,10 @@ export function PlacesProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
+  const setStartHour = useCallback((hour: number) => {
+    setPlan((prev) => ({ ...prev, startHour: hour }));
+  }, []);
+
   const setTransitPaths = useCallback(
     (fromId: string, toId: string, paths: TransitPath[] | null) => {
       setTransitPathsState((prev) => {
@@ -265,6 +274,7 @@ export function PlacesProvider({ children }: { children: React.ReactNode }) {
 
   const addDay = useCallback(() => {
     setPlan((prev) => ({
+      ...prev,
       days: [...prev.days, createEmptyDay()],
       activeDayIndex: prev.days.length,
     }));
@@ -288,7 +298,7 @@ export function PlacesProvider({ children }: { children: React.ReactNode }) {
       } else {
         nextActive = prev.activeDayIndex;
       }
-      return { days: nextDays, activeDayIndex: nextActive };
+      return { ...prev, days: nextDays, activeDayIndex: nextActive };
     });
     clearAllCaches();
   }, [clearAllCaches,days.length]);
@@ -303,22 +313,24 @@ export function PlacesProvider({ children }: { children: React.ReactNode }) {
   }, [clearAllCaches,days.length, activeDayIndex]);
 
   const loadFromDays = useCallback((newDays: DayPlan[]) => {
-    setPlan({
+    setPlan((prev) => ({
+      ...prev,
       days: newDays.length > 0 ? newDays : [createEmptyDay()],
       activeDayIndex: 0,
-    });
+    }));
     clearAllCaches();
   }, [clearAllCaches,]);
 
   const clearAll = useCallback(() => {
-    setPlan({ days: [createEmptyDay()], activeDayIndex: 0 });
+    setPlan((prev) => ({ ...prev, days: [createEmptyDay()], activeDayIndex: 0 }));
     clearAllCaches();
   }, [clearAllCaches,]);
 
   return (
     <PlacesContext.Provider
       value={{
-        places, transits, days, activeDayIndex, directionsResults, transitSteps, transitPaths,
+        places, transits, days, activeDayIndex, startHour, setStartHour,
+        directionsResults, transitSteps, transitPaths,
         addPlace, removePlace, reorderPlaces, updateStayMinutes, renamePlace, updateMemo,
         updateTransit, setDirectionsResult, setTransitSteps, setTransitPaths,
         movePlaceToDay, addDay, removeDay, setActiveDay, loadFromDays, clearAll,

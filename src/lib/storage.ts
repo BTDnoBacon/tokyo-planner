@@ -56,6 +56,8 @@ export function saveRoutes(routes: Route[]): void {
 export interface DraftPlan {
   days: DayPlan[];
   activeDayIndex: number;
+  /** 타임라인 시작 시각 (시) */
+  startHour: number;
 }
 
 export function loadDraft(): DraftPlan | null {
@@ -69,6 +71,7 @@ export function loadDraft(): DraftPlan | null {
     return {
       days,
       activeDayIndex: Math.min(Math.max(idx, 0), days.length - 1),
+      startHour: typeof parsed.startHour === "number" ? parsed.startHour : 9,
     };
   } catch {
     return null;
