@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { usePlaces } from "@/lib/places-context";
 import { useTravelDate } from "@/lib/use-travel-date";
-import { computeSegment, computeSegmentOptions, type TransitResult } from "@/lib/segment-calc";
+import { computeSegment, computeSegmentOptions, computeSegmentDepartures, type TransitResult } from "@/lib/segment-calc";
 import type { TransportMode, TransitStep } from "@/lib/types";
 
 function formatTime(totalMinutes: number) {
@@ -62,11 +62,14 @@ function TransitBlock({
   fromId,
   toId,
   departureHour,
+  departureMinutes,
   travelDate,
 }: {
   fromId: string;
   toId: string;
   departureHour: number;
+  /** 이 구간의 타임라인상 시작 시각 (하루 기준 분) — 출발 시간대 검색 기준점 */
+  departureMinutes: number;
   travelDate?: string;
 }) {
   const {
@@ -80,6 +83,11 @@ function TransitBlock({
   const [showSteps, setShowSteps] = useState(false);
   // 대안 경로 목록 (열려 있을 때만 값 존재 — 재계산이 싸서 캐시하지 않음)
   const [options, setOptions] = useState<TransitResult[] | null>(null);
+  // 출발 시간대 프로필 (rRAPTOR) — 구간 시작 시각부터 1시간
+  const [departures, setDepartures] = useState<TransitResult[] | null>(null);
+
+  // 엔진의 서비스일 기준 초 ↔ 타임라인 분 변환 기준 (심야 0~4시는 전날 24h+로 표현)
+  const engineBaseSecs = departureMinutes * 60 + (departureMinutes < 240 ? 86400 : 0);
 
   const currentMode: TransportMode = transit?.mode ?? "walk";
   const currentMin = transit?.minutes ?? 15;
@@ -95,6 +103,7 @@ function TransitBlock({
     setAutoError(null);
     setShowSteps(false);
     setOptions(null);
+    setDepartures(null);
     setDirectionsResult(fromId, toId, null);
     setTransitSteps(fromId, toId, null);
     setTransitPaths(fromId, toId, null);
@@ -152,6 +161,7 @@ function TransitBlock({
     const to = places.find((p) => p.id === toId);
     if (!from || !to) return;
     setAutoError(null);
+    setDepartures(null);
     startTransition(async () => {
       const result = await computeSegmentOptions(from, to, departureHour, travelDate);
       if (!result.ok) {
@@ -162,15 +172,46 @@ function TransitBlock({
     });
   }
 
-  function handlePickOption(opt: TransitResult) {
+  // 출발 시간대 목록 토글 (rRAPTOR) — 구간 시작 시각부터 1시간의 출발 프로필
+  function handleToggleDepartures() {
+    if (departures) {
+      setDepartures(null);
+      return;
+    }
+    const from = places.find((p) => p.id === fromId);
+    const to = places.find((p) => p.id === toId);
+    if (!from || !to) return;
+    setAutoError(null);
+    setOptions(null);
+    startTransition(async () => {
+      const result = await computeSegmentDepartures(from, to, departureMinutes, travelDate);
+      if (!result.ok) {
+        setAutoError(result.error);
+        return;
+      }
+      setDepartures(result.data);
+    });
+  }
+
+  function applyResult(opt: TransitResult, minutes: number) {
     const day = activeDayIndex;
     const walkOnly = opt.steps.every((s) => s.type === "walk");
-    setSegmentForDay(day, fromId, toId, walkOnly ? "walk" : "transit", opt.durationMinutes);
+    setSegmentForDay(day, fromId, toId, walkOnly ? "walk" : "transit", minutes);
     setTransitSteps(fromId, toId, opt.steps.length > 0 ? opt.steps : null, day);
     setTransitPaths(fromId, toId, opt.paths.length > 0 ? opt.paths : null, day);
     setDirectionsResult(fromId, toId, null);
     setOptions(null);
+    setDepartures(null);
     setShowSteps(opt.steps.some((s) => s.type === "train"));
+  }
+
+  function handlePickOption(opt: TransitResult) {
+    applyResult(opt, opt.durationMinutes);
+  }
+
+  // 출발 시간 선택 — 구간 시작부터 그 열차 출발까지의 대기를 포함한 시간으로 반영
+  function handlePickDeparture(opt: TransitResult) {
+    applyResult(opt, Math.max(1, Math.ceil((opt.endSecs - engineBaseSecs) / 60)));
   }
 
   const currentOption = TRANSPORT_OPTIONS.find((o) => o.mode === currentMode)!;
@@ -227,12 +268,20 @@ function TransitBlock({
                 </button>
               )}
               {!isPending && currentMode === "transit" && (
-                <button
-                  onClick={handleToggleOptions}
-                  className="text-xs px-2.5 py-0.5 rounded-full border border-zinc-200 text-zinc-500 hover:border-zinc-400 hover:text-zinc-700 transition-colors"
-                >
-                  {options ? "닫기" : "다른 경로"}
-                </button>
+                <>
+                  <button
+                    onClick={handleToggleOptions}
+                    className="text-xs px-2.5 py-0.5 rounded-full border border-zinc-200 text-zinc-500 hover:border-zinc-400 hover:text-zinc-700 transition-colors"
+                  >
+                    {options ? "닫기" : "다른 경로"}
+                  </button>
+                  <button
+                    onClick={handleToggleDepartures}
+                    className="text-xs px-2.5 py-0.5 rounded-full border border-zinc-200 text-zinc-500 hover:border-zinc-400 hover:text-zinc-700 transition-colors"
+                  >
+                    {departures ? "닫기" : "출발 시간"}
+                  </button>
+                </>
               )}
             </div>
           )}
@@ -257,6 +306,39 @@ function TransitBlock({
                   >
                     <span className="text-xs font-medium text-zinc-700">
                       {formatTime(Math.floor(opt.endSecs / 60))} 도착 · {opt.durationMinutes}분 ·{" "}
+                      {opt.transfers === 0 ? "환승 없음" : `환승 ${opt.transfers}회`}
+                    </span>
+                    {lines.length > 0 && (
+                      <span className="block truncate text-[11px] text-zinc-400">
+                        {lines.join(" → ")}
+                      </span>
+                    )}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        {/* 출발 시간대 목록 (rRAPTOR) — 이 시각에 나서면 언제 도착하는지. 선택 시 대기 포함 반영 */}
+        {departures && (
+          <ul className="ml-1 mt-1 space-y-1">
+            <li className="text-[11px] text-zinc-400 pl-1">
+              {formatTime(departureMinutes)}부터 1시간 내 출발
+            </li>
+            {departures.map((opt, i) => {
+              const lines = opt.steps
+                .filter((s) => s.type === "train")
+                .map((s) => s.lineName.split(" ")[0]);
+              return (
+                <li key={i}>
+                  <button
+                    onClick={() => handlePickDeparture(opt)}
+                    className="w-full rounded-lg border border-zinc-100 bg-white px-3 py-1.5 text-left hover:border-red-300 transition-colors"
+                  >
+                    <span className="text-xs font-medium text-zinc-700">
+                      {formatTime(Math.floor(opt.startSecs / 60))} 출발 →{" "}
+                      {formatTime(Math.floor(opt.endSecs / 60))} 도착 ·{" "}
                       {opt.transfers === 0 ? "환승 없음" : `환승 ${opt.transfers}회`}
                     </span>
                     {lines.length > 0 && (
@@ -381,7 +463,14 @@ export default function Timeline() {
           }
 
           return (
-            <TransitBlock key={block.key} fromId={block.fromId!} toId={block.toId!} departureHour={startHour} travelDate={travelDate} />
+            <TransitBlock
+              key={block.key}
+              fromId={block.fromId!}
+              toId={block.toId!}
+              departureHour={startHour}
+              departureMinutes={block.start}
+              travelDate={travelDate}
+            />
           );
         })}
 

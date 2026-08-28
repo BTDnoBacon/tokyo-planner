@@ -9,8 +9,8 @@
 import type { Place, TransportMode, TransitStep } from "./types";
 import type { TransitPath, TransitResult } from "./engine/geo";
 import { distanceMeters, walkSecsForMeters } from "./engine/geo";
-import { computeTransitLocal, computeTransitOptionsLocal } from "./client-transit";
-import { fetchDirections, fetchTransitOptions } from "./actions/directions";
+import { computeTransitLocal, computeTransitOptionsLocal, computeTransitDeparturesLocal } from "./client-transit";
+import { fetchDirections, fetchTransitOptions, fetchTransitDepartures } from "./actions/directions";
 import type { TransitOptionsResponse } from "./engine/plan";
 
 /** 이 거리 미만이면 자동 계산 기본 모드를 도보로 */
@@ -114,6 +114,27 @@ export async function computeSegmentOptions(
     return (
       local ??
       (await fetchTransitOptions(from.lat, from.lng, to.lat, to.lng, departureHour, travelDate))
+    );
+  } catch {
+    return { ok: false, error: "경로 계산 중 네트워크 오류가 발생했습니다." };
+  }
+}
+
+/** 출발 시간대 프로필 (rRAPTOR) — 브라우저 엔진 우선, 서버 폴백. 예외를 던지지 않음 */
+export async function computeSegmentDepartures(
+  from: Place,
+  to: Place,
+  /** 하루 기준 출발 분 — 타임라인 구간의 실제 시작 시각 */
+  departureMinutes: number,
+  travelDate?: string
+): Promise<TransitOptionsResponse> {
+  try {
+    const local = await computeTransitDeparturesLocal(
+      from.lat, from.lng, to.lat, to.lng, departureMinutes, travelDate
+    );
+    return (
+      local ??
+      (await fetchTransitDepartures(from.lat, from.lng, to.lat, to.lng, departureMinutes, travelDate))
     );
   } catch {
     return { ok: false, error: "경로 계산 중 네트워크 오류가 발생했습니다." };

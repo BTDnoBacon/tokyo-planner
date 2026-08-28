@@ -2,7 +2,7 @@
 
 import type { TransitStep } from "@/lib/types";
 import type { TransitPath } from "@/lib/engine/geo";
-import { computeTransitRoute, computeTransitOptions } from "@/lib/engine-server";
+import { computeTransitRoute, computeTransitOptions, computeTransitDepartures } from "@/lib/engine-server";
 import type { TransitOptionsResponse } from "@/lib/engine-server";
 
 export type TravelMode = "walking" | "transit" | "driving";
@@ -109,6 +109,23 @@ export async function fetchTransitOptions(
     return computeTransitOptions(originLat, originLng, destLat, destLng, departureHour, travelDate);
   } catch (err) {
     console.error("transit options error:", err);
+    return { ok: false, error: "경로 계산 중 오류가 발생했습니다." };
+  }
+}
+
+/** 출발 시간대 프로필 (rRAPTOR, 자체 엔진) — Web Worker 실패 시의 서버 폴백 */
+export async function fetchTransitDepartures(
+  originLat: number,
+  originLng: number,
+  destLat: number,
+  destLng: number,
+  departureMinutes: number,
+  travelDate?: string
+): Promise<TransitOptionsResponse> {
+  try {
+    return computeTransitDepartures(originLat, originLng, destLat, destLng, departureMinutes, travelDate);
+  } catch (err) {
+    console.error("transit departures error:", err);
     return { ok: false, error: "경로 계산 중 오류가 발생했습니다." };
   }
 }

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildTimetable, type GtfsInput } from "../../../scripts/gtfs/transform";
-import { route as raptor, type RaptorQuery } from "./raptor";
+import { route as raptor, routeRange, type RaptorQuery } from "./raptor";
 import type { ServiceCalendar, RouteMeta } from "./types";
 
 // ── 픽스처 헬퍼 ──
@@ -256,5 +256,123 @@ describe("심야 시각", () => {
     const js = query(tt, 0, 1, h(24, 30));
     expect(js).toHaveLength(1);
     expect(js[0].arrivalSecs).toBe(h(25, 20));
+  });
+});
+
+describe("rRAPTOR (출발시간 범위 검색)", () => {
+  function rangeQuery(
+    tt: ReturnType<typeof buildTimetable>,
+    from: number,
+    to: number,
+    startSecs: number,
+    endSecs: number,
+    extra: { sourceOffset?: number } = {}
+  ) {
+    return routeRange(tt, {
+      sources: [{ stop: from, offsetSecs: extra.sourceOffset ?? 0 }],
+      targets: [{ stop: to, offsetSecs: 0 }],
+      startSecs,
+      endSecs,
+      date: TUE,
+    });
+  }
+
+  // A(0) — B(1) — C(2): 각역 9:00/9:30 + B 통과 급행 9:05→9:15
+  const singleInput: GtfsInput = {
+    stops: [stop("A", 35.0), stop("B", 35.1), stop("C", 35.2)],
+    routes: [meta("R1")],
+    trips: [
+      trip("local1", "R1", [[0, h(9), h(9)], [1, h(9, 10), h(9, 10)], [2, h(9, 20), h(9, 20)]]),
+      trip("local2", "R1", [[0, h(9, 30), h(9, 30)], [1, h(9, 40), h(9, 40)], [2, h(9, 50), h(9, 50)]]),
+      trip("express", "R1", [[0, h(9, 5), h(9, 5)], [2, h(9, 15), h(9, 15)]]),
+    ],
+    continuations: [],
+    services: [WEEKDAY],
+  };
+  const singleTt = buildTimetable(singleInput);
+
+  it("프로필: 지배되지 않는 출발들만, 출발시각 오름차순", () => {
+    // local1(9:00→9:20)은 express(9:05→9:15)에 지배됨 (늦게 출발, 일찍 도착)
+    const js = rangeQuery(singleTt, 0, 2, h(9), h(10));
+    expect(js.map((j) => [j.departureSecs, j.arrivalSecs])).toEqual([
+      [h(9, 5), h(9, 15)], // express
+      [h(9, 30), h(9, 50)], // local2
+    ]);
+  });
+
+  it("범위 밖 출발은 제외", () => {
+    const js = rangeQuery(singleTt, 0, 2, h(9), h(9, 10));
+    expect(js).toHaveLength(1);
+    expect(js[0].departureSecs).toBe(h(9, 5));
+  });
+
+  it("환승 경로 프로필 — 각 출발이 독립 엔트리", () => {
+    // R1: A→B 9:00→9:10, 9:20→9:30 / R2: B→C 9:15→9:25, 9:35→9:45
+    const input: GtfsInput = {
+      stops: [stop("A", 35.0), stop("B", 35.1), stop("C", 35.2)],
+      routes: [meta("R1"), meta("R2")],
+      trips: [
+        trip("a1", "R1", [[0, h(9), h(9)], [1, h(9, 10), h(9, 10)]]),
+        trip("a2", "R1", [[0, h(9, 20), h(9, 20)], [1, h(9, 30), h(9, 30)]]),
+        trip("b1", "R2", [[1, h(9, 15), h(9, 15)], [2, h(9, 25), h(9, 25)]]),
+        trip("b2", "R2", [[1, h(9, 35), h(9, 35)], [2, h(9, 45), h(9, 45)]]),
+      ],
+      continuations: [],
+      services: [WEEKDAY],
+    };
+    const tt = buildTimetable(input);
+    const js = rangeQuery(tt, 0, 2, h(9), h(10));
+    expect(js.map((j) => [j.departureSecs, j.arrivalSecs, j.transfers])).toEqual([
+      [h(9), h(9, 25), 1],
+      [h(9, 20), h(9, 45), 1],
+    ]);
+  });
+
+  it("출발 도보 오프셋 반영 — 후보 출발시각은 '출발지 기준'", () => {
+    // 역 출발 9:10, 오프셋 300초 → 출발지 기준 9:05 출발. 범위 [9:00, 9:06]에 포함
+    const input: GtfsInput = {
+      stops: [stop("A", 35.0), stop("B", 35.1)],
+      routes: [meta("R1")],
+      trips: [trip("t", "R1", [[0, h(9, 10), h(9, 10)], [1, h(9, 20), h(9, 20)]])],
+      continuations: [],
+      services: [WEEKDAY],
+    };
+    const tt = buildTimetable(input);
+    expect(rangeQuery(tt, 0, 1, h(9), h(9, 6), { sourceOffset: 300 })).toHaveLength(1);
+    // 범위가 9:04에 끝나면 (출발지 기준 9:05 출발이라) 제외
+    expect(rangeQuery(tt, 0, 1, h(9), h(9, 4), { sourceOffset: 300 })).toHaveLength(0);
+  });
+
+  it("도보 환승으로만 닿는 역의 출발도 후보에 포함", () => {
+    // A와 B는 200m (도보 환승 합성) — 열차는 B→C만 존재 (9:10, 9:30 출발)
+    const input: GtfsInput = {
+      stops: [
+        stop("A", 35.0, 139.0),
+        stop("B", 35.0, 139.0022), // 약 200m
+        stop("C", 35.1, 139.0),
+      ],
+      routes: [meta("R1")],
+      trips: [
+        trip("t1", "R1", [[1, h(9, 10), h(9, 10)], [2, h(9, 20), h(9, 20)]]),
+        trip("t2", "R1", [[1, h(9, 30), h(9, 30)], [2, h(9, 40), h(9, 40)]]),
+      ],
+      continuations: [],
+      services: [WEEKDAY],
+    };
+    const tt = buildTimetable(input);
+    const js = rangeQuery(tt, 0, 2, h(9), h(10));
+    // 도보 후 9:10 탑승 / 9:30 탑승 — 두 출발 모두 프로필에
+    expect(js).toHaveLength(2);
+    expect(js.map((j) => j.arrivalSecs)).toEqual([h(9, 20), h(9, 40)]);
+    expect(js[0].legs[0].kind).toBe("walk");
+  });
+
+  it("범위 밖 출발이 지배하는 엔트리는 생략 (조금 기다리면 더 나은 열차가 있는 경우)", () => {
+    // [9:00, 9:00]: local1(9:00→9:20)은 범위 밖 express(9:05→9:15)에 지배 — 빈 프로필.
+    // 앱에서는 60분 윈도를 쓰므로 윈도 끝 경계에서만 발생하는 무해한 축소.
+    expect(rangeQuery(singleTt, 0, 2, h(9), h(9))).toHaveLength(0);
+    // 범위를 express까지 넓히면 express가 그 구간을 대표
+    const js = rangeQuery(singleTt, 0, 2, h(9), h(9, 5));
+    expect(js.map((j) => [j.departureSecs, j.arrivalSecs])).toEqual([[h(9, 5), h(9, 15)]]);
   });
 });
