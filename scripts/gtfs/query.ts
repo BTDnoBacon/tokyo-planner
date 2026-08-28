@@ -9,6 +9,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { deserializeTimetable } from "../../src/lib/engine/format";
 import { route as raptor } from "../../src/lib/engine/raptor";
+import { findStopsByKoName } from "./lookup";
 
 function fmt(secs: number): string {
   const h = Math.floor(secs / 3600);
@@ -26,19 +27,8 @@ const loadStart = performance.now();
 const tt = deserializeTimetable(readFileSync(join(process.cwd(), "data/engine/tokyo-rail.bin")));
 const loadMs = Math.round(performance.now() - loadStart);
 
-function findStops(name: string): number[] {
-  const out: number[] = [];
-  for (let i = 0; i < tt.stopIds.length; i++) {
-    if (tt.stopIsStation[i]) continue;
-    if (tt.stopNamesKo[i] === name || tt.stopNamesKo[i].includes(name)) out.push(i);
-  }
-  // 정확 일치가 있으면 정확 일치만
-  const exact = out.filter((i) => tt.stopNamesKo[i] === name);
-  return exact.length > 0 ? exact : out;
-}
-
-const sources = findStops(fromName).map((stop) => ({ stop, offsetSecs: 0 }));
-const targets = findStops(toName).map((stop) => ({ stop, offsetSecs: 0 }));
+const sources = findStopsByKoName(tt, fromName).map((stop) => ({ stop, offsetSecs: 0 }));
+const targets = findStopsByKoName(tt, toName).map((stop) => ({ stop, offsetSecs: 0 }));
 if (sources.length === 0 || targets.length === 0) {
   console.error(`역을 찾을 수 없음: ${sources.length === 0 ? fromName : toName}`);
   process.exit(1);
