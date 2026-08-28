@@ -73,10 +73,50 @@ describe("journeyToResult", () => {
     expect(result.steps[2]).toEqual({ type: "walk", lineName: "도보", minutes: 3 });
   });
 
-  it("정차역 좌표 폴리라인 (중간 정차역 포함)", () => {
+  it("정차역 좌표 폴리라인 (중간 정차역 포함, shapes 없음 → 직선 폴백)", () => {
     expect(result.paths).toHaveLength(1);
+    expect(result.paths[0].kind).toBe("rail");
     expect(result.paths[0].points).toHaveLength(3); // A, B, C
     expect(result.paths[0].color).toBe("#FF0000");
+  });
+
+  it("endpoints 전달 시 접근/이탈 도보 점선 경로 추가 (30m 미만은 생략)", () => {
+    // 출발지: A역에서 ~550m, 도착지: C역에서 ~5m (점선 생략 기대)
+    const r = journeyToResult(tt, journeys[0], 300, 0, {
+      originLat: 35.005, originLng: 139.0, destLat: 35.20004, destLng: 139.0,
+    });
+    const walks = r.paths.filter((p) => p.kind === "walk");
+    expect(walks).toHaveLength(1); // 접근만
+    expect(walks[0].points[0]).toEqual({ lat: 35.005, lng: 139.0 });
+    expect(walks[0].points[1].lat).toBeCloseTo(35.0, 5); // A역
+    // rail 경로는 그대로 유지
+    expect(r.paths.filter((p) => p.kind === "rail")).toHaveLength(1);
+  });
+
+  it("선형(shapes)이 있으면 승차~하차 구간을 실선형으로", () => {
+    const shaped: GtfsInput = {
+      ...input,
+      trips: [{ ...input.trips[0], shapeId: "S", stopDists: [0, 11, 22] }],
+      shapes: new Map([
+        ["S", [
+          35.0, 139.0, 0,
+          35.05, 139.02, 5.6, // 곡선점 (~1.8km 이탈 — 유지)
+          35.1, 139.0, 11,
+          35.2, 139.0, 22,
+        ]],
+      ]),
+    };
+    const stt = buildTimetable(shaped);
+    const js = raptor(stt, {
+      sources: [{ stop: 0, offsetSecs: 0 }],
+      targets: [{ stop: 2, offsetSecs: 0 }],
+      departureSecs: h(8, 50),
+      date: 20260901,
+    });
+    const r = journeyToResult(stt, js[0], 0, 0);
+    const rail = r.paths.find((p) => p.kind === "rail")!;
+    expect(rail.points).toHaveLength(4); // A, 곡선점, B, C
+    expect(rail.points[1].lng).toBeCloseTo(139.02, 4);
   });
 
   it("이동 시간 = 접근 도보 + 승차구간 (이탈 도보는 arrivalSecs에 이미 포함 — 이중 계산 금지)", () => {

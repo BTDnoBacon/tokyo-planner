@@ -37,7 +37,17 @@ async function loadData(): Promise<Timetable> {
   const cache = await caches.open(CACHE_NAME);
   const cached = await cache.match(DATA_URL);
   if (cached) {
-    const tt = await decompress(cached.clone());
+    let tt: Timetable;
+    try {
+      tt = await decompress(cached.clone());
+    } catch {
+      // 캐시된 구버전 포맷/손상 데이터 — 삭제 후 새로 받는다 (안 하면 영구 서버 폴백에 빠짐)
+      await cache.delete(DATA_URL);
+      const res = await fetch(DATA_URL);
+      if (!res.ok) throw new Error(`시간표 다운로드 실패 (${res.status})`);
+      await cache.put(DATA_URL, res.clone());
+      return decompress(res);
+    }
     if (isFresh(tt)) return tt;
     // 만료 — 온라인이면 갱신, 오프라인이면 그래도 캐시 사용 (에러는 plan에서 안내)
     try {

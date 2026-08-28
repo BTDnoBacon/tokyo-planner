@@ -60,6 +60,30 @@ export function nearbyPlatforms(
 export interface TransitPath {
   color: string;
   points: { lat: number; lng: number }[];
+  /** "walk"는 점선으로 표시 — 생략 시 실선(전철) */
+  kind?: "rail" | "walk";
+}
+
+/** 도보 점선 색 (지도 위 시인성 좋은 중립 회색) */
+const WALK_PATH_COLOR = "#64748b";
+/** 이 거리 미만의 도보는 선을 그리지 않음 (지도 노이즈 방지) */
+const MIN_WALK_PATH_M = 30;
+
+function walkPath(
+  fromLat: number,
+  fromLng: number,
+  toLat: number,
+  toLng: number
+): TransitPath | null {
+  if (distanceMeters(fromLat, fromLng, toLat, toLng) < MIN_WALK_PATH_M) return null;
+  return {
+    kind: "walk",
+    color: WALK_PATH_COLOR,
+    points: [
+      { lat: fromLat, lng: fromLng },
+      { lat: toLat, lng: toLng },
+    ],
+  };
 }
 
 export interface TransitResult {
@@ -73,18 +97,35 @@ export interface TransitResult {
   transfers: number;
 }
 
+/** 출발지·도착지 좌표 — 도보 구간 점선 표시용 (없으면 도보 선 생략) */
+export interface JourneyEndpoints {
+  originLat: number;
+  originLng: number;
+  destLat: number;
+  destLng: number;
+}
+
 /** RAPTOR Journey → 앱 표시용 TransitStep/폴리라인 변환 */
 export function journeyToResult(
   tt: Timetable,
   journey: Journey,
   accessWalkSecs: number,
-  egressWalkSecs: number
+  egressWalkSecs: number,
+  endpoints?: JourneyEndpoints
 ): TransitResult {
   const steps: TransitStep[] = [];
   const paths: TransitPath[] = [];
 
   if (accessWalkSecs > 60) {
     steps.push({ type: "walk", lineName: "도보", minutes: Math.round(accessWalkSecs / 60) });
+  }
+  // 접근 도보 점선: 출발지 → 첫 승차 정류장
+  if (endpoints && journey.legs.length > 0) {
+    const first = journey.legs[0].fromStop;
+    const p = walkPath(
+      endpoints.originLat, endpoints.originLng, tt.stopLats[first], tt.stopLons[first]
+    );
+    if (p) paths.push(p);
   }
 
   for (const leg of journey.legs) {
@@ -94,6 +135,12 @@ export function journeyToResult(
         lineName: "도보",
         minutes: Math.max(1, Math.round((leg.arrivalSecs - leg.departureSecs) / 60)),
       });
+      // 환승 도보 점선: 정류장 → 정류장
+      const p = walkPath(
+        tt.stopLats[leg.fromStop], tt.stopLons[leg.fromStop],
+        tt.stopLats[leg.toStop], tt.stopLons[leg.toStop]
+      );
+      if (p) paths.push(p);
       continue;
     }
     const meta = tt.routes[tt.routeMetaIndex[leg.route!]];
@@ -106,7 +153,7 @@ export function journeyToResult(
       color: meta.color ? `#${meta.color}` : undefined,
     });
 
-    // 정차역 좌표를 이은 폴리라인 (shapes 대신 — 역간 직선 근사)
+    // 승차~하차 구간 폴리라인 — 선형(shapes)이 있으면 실선형, 없으면 정차역 좌표 직선 폴백
     const r = leg.route!;
     const base = tt.routeStopsIndex[r];
     const len = tt.routeStopsIndex[r + 1] - base;
@@ -118,17 +165,34 @@ export function journeyToResult(
       if (s === leg.toStop) to = p;
     }
     if (from >= 0 && to > from) {
+      const color = meta.color ? `#${meta.color}` : "#f97316";
+      const shapeFrom = tt.routeStopShapePos[base + from];
+      const shapeTo = tt.routeStopShapePos[base + to];
       const points = [];
-      for (let p = from; p <= to; p++) {
-        const s = tt.routeStops[base + p];
-        points.push({ lat: tt.stopLats[s], lng: tt.stopLons[s] });
+      if (shapeFrom >= 0 && shapeTo > shapeFrom) {
+        for (let i = shapeFrom; i <= shapeTo; i++) {
+          points.push({ lat: tt.shapeLats[i], lng: tt.shapeLons[i] });
+        }
+      } else {
+        for (let p = from; p <= to; p++) {
+          const s = tt.routeStops[base + p];
+          points.push({ lat: tt.stopLats[s], lng: tt.stopLons[s] });
+        }
       }
-      paths.push({ color: meta.color ? `#${meta.color}` : "#f97316", points });
+      paths.push({ kind: "rail", color, points });
     }
   }
 
   if (egressWalkSecs > 60) {
     steps.push({ type: "walk", lineName: "도보", minutes: Math.round(egressWalkSecs / 60) });
+  }
+  // 이탈 도보 점선: 마지막 하차 정류장 → 도착지
+  if (endpoints && journey.legs.length > 0) {
+    const last = journey.legs[journey.legs.length - 1].toStop;
+    const p = walkPath(
+      tt.stopLats[last], tt.stopLons[last], endpoints.destLat, endpoints.destLng
+    );
+    if (p) paths.push(p);
   }
 
   // Journey.arrivalSecs는 raptor가 target offset(이탈 도보)을 이미 더한 값 —

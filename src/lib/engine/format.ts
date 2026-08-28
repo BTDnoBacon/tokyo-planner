@@ -11,9 +11,9 @@ import type { Timetable } from "./types";
  */
 
 const MAGIC = 0x544b5254; // "TKRT"
-export const FORMAT_VERSION = 1;
+export const FORMAT_VERSION = 2; // v2: 노선 선형(shapes) 필드 추가
 
-type BlobType = "i32" | "f64" | "u8";
+type BlobType = "i32" | "f64" | "f32" | "u8";
 
 interface Section {
   type: BlobType;
@@ -42,9 +42,13 @@ const BLOB_FIELDS: { key: keyof Timetable; type: BlobType }[] = [
   { key: "transfersIndex", type: "i32" },
   { key: "transfersTo", type: "i32" },
   { key: "transfersSecs", type: "i32" },
+  { key: "routeShapeIndex", type: "i32" },
+  { key: "shapeLats", type: "f32" },
+  { key: "shapeLons", type: "f32" },
+  { key: "routeStopShapePos", type: "i32" },
 ];
 
-const BYTES_PER_ELEMENT: Record<BlobType, number> = { i32: 4, f64: 8, u8: 1 };
+const BYTES_PER_ELEMENT: Record<BlobType, number> = { i32: 4, f64: 8, f32: 4, u8: 1 };
 
 function align8(n: number): number {
   return (n + 7) & ~7;
@@ -64,11 +68,11 @@ export function serializeTimetable(t: Timetable): Uint8Array {
   };
 
   const sections: Section[] = [];
-  const blobs: (Int32Array | Float64Array | Uint8Array)[] = [];
+  const blobs: (Int32Array | Float64Array | Float32Array | Uint8Array)[] = [];
   // 헤더(12B) + JSON 길이를 알아야 오프셋이 정해지므로 2-pass: 먼저 상대 오프셋 0 기준으로 배치
   let blobCursor = 0;
   for (const { key, type } of BLOB_FIELDS) {
-    const arr = t[key] as Int32Array | Float64Array | Uint8Array;
+    const arr = t[key] as Int32Array | Float64Array | Float32Array | Uint8Array;
     blobCursor = align8(blobCursor);
     sections.push({ type, byteOffset: blobCursor, length: arr.length });
     blobs.push(arr);
@@ -131,9 +135,11 @@ export function deserializeTimetable(data: Uint8Array | ArrayBuffer): Timetable 
     const arr =
       type === "f64"
         ? new Float64Array(bytes.buffer, byteOffset, sec.length)
-        : type === "u8"
-          ? new Uint8Array(bytes.buffer, byteOffset, sec.length)
-          : new Int32Array(bytes.buffer, byteOffset, sec.length);
+        : type === "f32"
+          ? new Float32Array(bytes.buffer, byteOffset, sec.length)
+          : type === "u8"
+            ? new Uint8Array(bytes.buffer, byteOffset, sec.length)
+            : new Int32Array(bytes.buffer, byteOffset, sec.length);
     (t as unknown as Record<string, unknown>)[key as string] = arr;
   });
   return t;
