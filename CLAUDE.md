@@ -19,8 +19,10 @@ pnpm data:build   # GTFS → data/engine/tokyo-rail.bin 빌드 (사전: extracte
 
 ## 환경 주의사항
 
-- **pnpm 버전**: lockfile이 v6 형식(pnpm 8). 의존성 추가·설치는 `npx pnpm@8 …`로 할 것.
-  pnpm 10을 쓰면 lockfile을 v9로 다시 쓰고 `pnpm-workspace.yaml`을 만들어버린다 — 금지.
+- **pnpm 버전**: `package.json`의 `packageManager` 필드(pnpm 10)가 정본 — corepack이 있으면
+  자동 적용되고, 없으면 `npx pnpm@10 …`으로 실행. lockfile은 v9 형식.
+- 네이티브 빌드 스크립트는 `pnpm.onlyBuiltDependencies`(esbuild, sharp, unrs-resolver)로
+  승인됨 — 새 의존성이 "Ignored build scripts" 경고를 내면 이 목록에 추가.
 - pnpm이 PATH에 없는 환경에서는 `./node_modules/.bin/`의 바이너리(tsc, eslint, vitest,
   next, tsx)를 직접 실행하면 된다.
 - API 키는 `.env.local` (`.env.example` 참고). 키가 없어도 앱은 뜨고 지도·위젯만 에러 표시.
