@@ -17,7 +17,7 @@ import type { Place } from "@/lib/types";
  */
 export default function AutoTransit() {
   const {
-    places, transits, startHour, activeDayIndex,
+    places, transits, startHour, activeDayIndex, planGeneration,
     setSegmentForDay, setTransitSteps, setTransitPaths,
   } = usePlaces();
   const travelDate = useTravelDate();
@@ -69,6 +69,16 @@ export default function AutoTransit() {
 
   // 시작 시각·여행 날짜가 바뀌면 전철 구간은 시각표가 달라지므로 재계산 (도보/택시는 시간 무관)
   const prevScheduleRef = useRef<{ startHour: number; travelDate?: string } | null>(null);
+
+  // 플랜 전체 교체(공유 로드·루트 불러오기)는 "시각 변경"이 아니다 — 기준점을 리셋해
+  // 함께 들어온 startHour가 방금 불러온 전철 시간을 덮어쓰지 않게 한다.
+  // (아래 재계산 effect보다 먼저 선언되어 같은 커밋에서 먼저 실행됨)
+  useEffect(() => {
+    prevScheduleRef.current = { startHour, travelDate };
+    // planGeneration 변경 시에만 리셋 — startHour/travelDate는 의도적으로 제외
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [planGeneration]);
+
   useEffect(() => {
     const prev = prevScheduleRef.current;
     prevScheduleRef.current = { startHour, travelDate };
