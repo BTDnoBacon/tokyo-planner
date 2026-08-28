@@ -13,35 +13,69 @@ import { usePlaces } from "@/lib/places-context";
 const TOKYO_CENTER = { lat: 35.6762, lng: 139.6503 };
 const MAP_ID = "tokyo-planner-map";
 
+/** 이름을 못 얻었을 때의 통일된 폴백 (검색·POI·지도 클릭 공용) */
+function fallbackPlaceName(lat: number, lng: number): string {
+  return `장소 (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
+}
+
 // 장소 검색 — Places Autocomplete. 선택하면 장소 추가 + 지도 이동
 function PlaceSearch() {
   const map = useMap();
   const placesLib = useMapsLibrary("places");
   const inputRef = useRef<HTMLInputElement>(null);
-  const { addPlace } = usePlaces();
+  const { addPlace, activeDayIndex } = usePlaces();
+  const [notFound, setNotFound] = useState(false);
+
+  // 비동기 콜백이 "검색 시점"의 일차에 기록하도록
+  const dayRef = useRef(activeDayIndex);
+  useEffect(() => {
+    dayRef.current = activeDayIndex;
+  }, [activeDayIndex]);
 
   useEffect(() => {
     if (!placesLib || !map || !inputRef.current) return;
+    const service = new placesLib.PlacesService(map);
     const autocomplete = new placesLib.Autocomplete(inputRef.current, {
       fields: ["name", "geometry.location"],
       // 도쿄권 편향 (엄격 제한은 아님 — 근교 검색 허용)
       bounds: new google.maps.LatLngBounds({ lat: 35.4, lng: 139.3 }, { lat: 35.95, lng: 140.1 }),
     });
-    const listener = autocomplete.addListener("place_changed", () => {
-      const place = autocomplete.getPlace();
-      const loc = place.geometry?.location;
-      if (!loc) return;
-      addPlace({
-        name: place.name ?? "이름 없는 장소",
-        lat: loc.lat(),
-        lng: loc.lng(),
-        stayMinutes: 60,
-      });
+
+    const commit = (loc: google.maps.LatLng, name: string | undefined, day: number) => {
+      addPlace({ name: name ?? fallbackPlaceName(loc.lat(), loc.lng()), lat: loc.lat(), lng: loc.lng() }, day);
       map.panTo(loc);
       if ((map.getZoom() ?? 0) < 14) map.setZoom(15);
       if (inputRef.current) inputRef.current.value = "";
+      setNotFound(false);
+    };
+
+    const listener = autocomplete.addListener("place_changed", () => {
+      const day = dayRef.current;
+      const place = autocomplete.getPlace();
+      const loc = place.geometry?.location;
+      if (loc) {
+        commit(loc, place.name, day);
+        return;
+      }
+      // 제안 선택 없이 Enter — 입력 텍스트로 검색 폴백
+      const query = place.name?.trim();
+      if (!query) return;
+      service.findPlaceFromQuery(
+        { query, fields: ["name", "geometry.location"], locationBias: map.getCenter() ?? undefined },
+        (results, status) => {
+          const found = results?.[0]?.geometry?.location;
+          if (status === google.maps.places.PlacesServiceStatus.OK && found) {
+            commit(found, results![0].name, day);
+          } else {
+            setNotFound(true);
+          }
+        }
+      );
     });
-    return () => listener.remove();
+    return () => {
+      listener.remove();
+      google.maps.event.clearInstanceListeners(autocomplete);
+    };
   }, [placesLib, map, addPlace]);
 
   if (!placesLib) return null;
@@ -51,8 +85,14 @@ function PlaceSearch() {
         ref={inputRef}
         type="text"
         placeholder="🔍 장소 검색 (예: 시부야 스카이)"
+        onInput={() => setNotFound(false)}
         className="w-full rounded-full border border-zinc-200 bg-white/95 px-4 py-2 text-sm shadow-md outline-none focus:border-red-400 transition-colors"
       />
+      {notFound && (
+        <p className="mt-1 rounded-full bg-white/95 px-3 py-1 text-center text-xs text-red-400 shadow">
+          검색 결과가 없습니다
+        </p>
+      )}
     </div>
   );
 }
@@ -63,7 +103,7 @@ function MapClickHandler() {
   const placesLib = useMapsLibrary("places");
   const geocoderRef = useRef<google.maps.Geocoder | null>(null);
   const placesServiceRef = useRef<google.maps.places.PlacesService | null>(null);
-  const { addPlace } = usePlaces();
+  const { addPlace, activeDayIndex } = usePlaces();
 
   useEffect(() => {
     if (geocodingLib) {
@@ -83,34 +123,42 @@ function MapClickHandler() {
 
       const lat = e.latLng.lat();
       const lng = e.latLng.lng();
+      const day = activeDayIndex; // 클릭 시점의 일차 — 비동기 응답이 늦어도 여기에 기록
 
-      // POI(가게·명소) 클릭이면 placeId로 실제 장소 이름을 조회
+      // POI(가게·명소) 클릭이면 기본 정보창을 항상 억제하고, 가능하면 실제 장소 이름 조회
       const placeId = (e as google.maps.IconMouseEvent).placeId;
-      if (placeId && placesServiceRef.current) {
-        e.stop(); // 구글 기본 POI 정보창 억제
-        placesServiceRef.current.getDetails(
-          { placeId, fields: ["name", "geometry.location"] },
-          (place, status) => {
-            if (status === google.maps.places.PlacesServiceStatus.OK && place?.name) {
-              const loc = place.geometry?.location;
-              addPlace({
-                name: place.name,
-                lat: loc?.lat() ?? lat,
-                lng: loc?.lng() ?? lng,
-                stayMinutes: 60,
-              });
-            } else {
-              addPlace({ name: `장소 (${lat.toFixed(4)}, ${lng.toFixed(4)})`, lat, lng, stayMinutes: 60 });
+      if (placeId) {
+        e.stop();
+        if (placesServiceRef.current) {
+          placesServiceRef.current.getDetails(
+            { placeId, fields: ["name", "geometry.location"] },
+            (place, status) => {
+              if (status === google.maps.places.PlacesServiceStatus.OK && place?.name) {
+                const loc = place.geometry?.location;
+                addPlace({ name: place.name, lat: loc?.lat() ?? lat, lng: loc?.lng() ?? lng }, day);
+              } else {
+                console.warn("Places getDetails 실패:", status);
+                addPlace({ name: fallbackPlaceName(lat, lng), lat, lng }, day);
+              }
             }
-          }
-        );
+          );
+          return;
+        }
+        // places 라이브러리 미로드 — 지오코딩 폴백으로 계속
+      }
+
+      if (!geocoderRef.current) {
+        addPlace({ name: fallbackPlaceName(lat, lng), lat, lng }, day);
         return;
       }
 
-      if (!geocoderRef.current) return;
-
-      const result = await geocoderRef.current.geocode({ location: { lat, lng } });
-      const results = result.results;
+      // geocode()는 ZERO_RESULTS 등에서 reject — 좌표 이름 폴백으로 처리
+      let results: google.maps.GeocoderResult[] = [];
+      try {
+        results = (await geocoderRef.current.geocode({ location: { lat, lng } })).results;
+      } catch {
+        /* 결과 없음/쿼터 초과 — 아래 폴백 이름 사용 */
+      }
       const allComponents = results.flatMap(
         (r: google.maps.GeocoderResult) => r.address_components,
       );
@@ -130,13 +178,11 @@ function MapClickHandler() {
           c.types.includes("locality"),
       )?.long_name;
 
-      const name =
-        poiName ?? sublocalityName ?? localityName ??
-        `장소 (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
+      const name = poiName ?? sublocalityName ?? localityName ?? fallbackPlaceName(lat, lng);
 
-      addPlace({ name, lat, lng, stayMinutes: 60 });
+      addPlace({ name, lat, lng }, day);
     },
-    [addPlace],
+    [addPlace, activeDayIndex],
   );
 
   useEffect(() => {
