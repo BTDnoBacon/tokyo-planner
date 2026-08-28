@@ -15,7 +15,8 @@ interface PlacesContextValue {
   directionsResults: Record<string, google.maps.DirectionsResult>;
   transitSteps: Record<string, TransitStep[]>;
   transitPaths: Record<string, TransitPath[]>;
-  addPlace: (place: Omit<Place, "id" | "order">) => void;
+  /** forDay를 주면 그 일차에 추가 (비동기 콜백용 — 없으면 커밋 시점의 활성 일차). stayMinutes 기본 60 */
+  addPlace: (place: AddPlaceInput, forDay?: number) => void;
   removePlace: (id: string) => void;
   reorderPlaces: (fromIndex: number, toIndex: number) => void;
   updateStayMinutes: (id: string, minutes: number) => void;
@@ -46,6 +47,12 @@ interface PlacesContextValue {
   loadFromDays: (days: DayPlan[]) => void;
   clearAll: () => void;
 }
+
+export type AddPlaceInput = Omit<Place, "id" | "order" | "stayMinutes"> & {
+  stayMinutes?: number;
+};
+
+const DEFAULT_STAY_MINUTES = 60;
 
 const PlacesContext = createContext<PlacesContextValue | null>(null);
 
@@ -129,15 +136,25 @@ export function PlacesProvider({ children }: { children: React.ReactNode }) {
     }));
   }, []);
 
-  const addPlace = useCallback((place: Omit<Place, "id" | "order">) => {
-    updateActiveDay((day) => ({
-      ...day,
-      places: [
-        ...day.places,
-        { ...place, id: crypto.randomUUID(), order: day.places.length + 1 },
-      ],
-    }));
-  }, [updateActiveDay]);
+  const addPlace = useCallback((place: AddPlaceInput, forDay?: number) => {
+    setPlan((prev) => {
+      const dayIndex = forDay ?? prev.activeDayIndex;
+      const day = prev.days[dayIndex];
+      if (!day) return prev;
+      const entry: Place = {
+        ...place,
+        stayMinutes: place.stayMinutes ?? DEFAULT_STAY_MINUTES,
+        id: crypto.randomUUID(),
+        order: day.places.length + 1,
+      };
+      return {
+        ...prev,
+        days: prev.days.map((d, i) =>
+          i === dayIndex ? { ...d, places: [...d.places, entry] } : d
+        ),
+      };
+    });
+  }, []);
 
   const removePlace = useCallback((id: string) => {
     updateActiveDay((day) => ({
