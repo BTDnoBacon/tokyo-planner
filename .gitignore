@@ -43,3 +43,4 @@ next-env.d.ts
 
 # harness state files (agent orchestration, not app code)
 .state/
+.playwright-mcp/
