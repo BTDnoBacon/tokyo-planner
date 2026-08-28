@@ -87,5 +87,14 @@ export interface Timetable {
   transfersTo: Int32Array;
   transfersSecs: Int32Array;
 
+  // ── 노선 선형 (shapes.txt, 표시 전용 — 단순화된 실선형) ──
+  /** raptor route r의 선형 점 범위: shapeLats/Lons[routeShapeIndex[r] .. routeShapeIndex[r+1]) — 선형 없으면 빈 범위 */
+  routeShapeIndex: Int32Array;
+  /** f32 정밀도(~1m)면 표시용으로 충분 — f64 대비 절반 용량 */
+  shapeLats: Float32Array;
+  shapeLons: Float32Array;
+  /** routeStops와 병렬: 해당 정차역의 선형 점 절대 인덱스 (선형 없으면 -1) */
+  routeStopShapePos: Int32Array;
+
   services: ServiceCalendar[];
 }

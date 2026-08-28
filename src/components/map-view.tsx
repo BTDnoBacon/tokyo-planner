@@ -239,6 +239,24 @@ function TransitPathRenderers() {
     const polylines: google.maps.Polyline[] = [];
     Object.values(transitPaths).forEach((paths) => {
       paths.forEach((path) => {
+        if (path.kind === "walk") {
+          // 도보 구간 점선 — 실선 폭 0 + 반복 대시 아이콘 (Google Maps 점선 관용구)
+          polylines.push(
+            new google.maps.Polyline({
+              map,
+              path: path.points,
+              strokeOpacity: 0,
+              icons: [
+                {
+                  icon: { path: "M 0,-1 0,1", strokeOpacity: 0.8, strokeWeight: 3, scale: 2.5, strokeColor: path.color },
+                  offset: "0",
+                  repeat: "14px",
+                },
+              ],
+            })
+          );
+          return;
+        }
         polylines.push(
           new google.maps.Polyline({
             map,

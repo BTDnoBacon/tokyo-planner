@@ -136,11 +136,45 @@ export function runPipeline() {
       serviceId: rec.get("service_id"),
       headsign: rec.get("trip_headsign"),
       stopTimes: [],
+      shapeId: rec.get("shape_id") || undefined,
+      stopDists: [],
     };
     trips.push(trip);
     tripByIdx.set(trip.id, trip);
   }
   done(`${trips.length} trips`);
+
+  // ── shapes (노선 선형 — 표시 전용) ──
+  done = step("shapes.txt");
+  const shapeRows = new Map<string, { seq: number; lat: number; lon: number; dist: number }[]>();
+  for (const rec of parseCsvRecords(read("shapes.txt"))) {
+    const id = rec.get("shape_id");
+    let rows = shapeRows.get(id);
+    if (!rows) {
+      rows = [];
+      shapeRows.set(id, rows);
+    }
+    rows.push({
+      seq: Number(rec.get("shape_pt_sequence")),
+      lat: Number(rec.get("shape_pt_lat")),
+      lon: Number(rec.get("shape_pt_lon")),
+      dist: Number(rec.get("shape_dist_traveled")),
+    });
+  }
+  const shapes = new Map<string, number[]>();
+  let shapePts = 0;
+  for (const [id, rows] of shapeRows) {
+    rows.sort((a, b) => a.seq - b.seq);
+    const flat: number[] = new Array(rows.length * 3);
+    rows.forEach((row, i) => {
+      flat[i * 3] = row.lat;
+      flat[i * 3 + 1] = row.lon;
+      flat[i * 3 + 2] = row.dist;
+    });
+    shapes.set(id, flat);
+    shapePts += rows.length;
+  }
+  done(`${shapes.size} shapes / ${shapePts} points`);
 
   // ── stop_times (최대 파일 — 121만 행) ──
   done = step("stop_times.txt");
@@ -166,6 +200,8 @@ export function runPipeline() {
     }
     if (dep < arr) nonMonotonic++;
     trip.stopTimes.push(Number(rec.get("stop_sequence")), stop, arr, dep);
+    // 선형 앵커용 — stopTimes push와 항상 같은 순서 유지
+    trip.stopDists!.push(Number(rec.get("shape_dist_traveled")));
     stRows++;
   }
   done(`${stRows} rows (참조 오류 ${badRefs}, dep<arr ${nonMonotonic}, 시각 누락 trip ${invalidTrips.size})`);
@@ -187,13 +223,17 @@ export function runPipeline() {
 
   // ── 변환 ──
   done = step("transform");
-  const input: GtfsInput = { stops, routes, trips: validTrips, continuations, services };
+  const input: GtfsInput = { stops, routes, trips: validTrips, continuations, services, shapes };
   const timetable = buildTimetable(input);
   const nRaptorRoutes = timetable.routeStopsIndex.length - 1;
   const nTransfers = timetable.transfersTo.length;
   const nContinuations = timetable.tripContinuation.filter((v) => v >= 0).length;
+  let shapedRoutes = 0;
+  for (let r = 0; r < nRaptorRoutes; r++) {
+    if (timetable.routeShapeIndex[r + 1] > timetable.routeShapeIndex[r]) shapedRoutes++;
+  }
   done(
-    `raptor routes ${nRaptorRoutes} / trips ${timetable.tripIds.length} / footpaths ${nTransfers} / 직통 ${nContinuations}`
+    `raptor routes ${nRaptorRoutes} (선형 ${shapedRoutes}) / trips ${timetable.tripIds.length} / footpaths ${nTransfers} / 직통 ${nContinuations} / 선형점 ${timetable.shapeLats.length}`
   );
 
   // ── 직렬화 + 라운드트립 검증 ──

@@ -47,12 +47,28 @@ function addDays(date: number, days: number): number {
   return next.getUTCFullYear() * 10000 + (next.getUTCMonth() + 1) * 100 + next.getUTCDate();
 }
 
-function walkOnlyResult(meters: number, departureSecs: number): TransitResult {
+function walkOnlyResult(
+  meters: number,
+  departureSecs: number,
+  originLat: number,
+  originLng: number,
+  destLat: number,
+  destLng: number
+): TransitResult {
   const walkSecs = walkSecsForMeters(meters);
   const minutes = Math.max(1, Math.ceil(walkSecs / 60));
   return {
     steps: [{ type: "walk", lineName: "도보", minutes }],
-    paths: [],
+    paths: [
+      {
+        kind: "walk",
+        color: "#64748b",
+        points: [
+          { lat: originLat, lng: originLng },
+          { lat: destLat, lng: destLng },
+        ],
+      },
+    ],
     startSecs: departureSecs,
     endSecs: departureSecs + walkSecs,
     durationMinutes: minutes,
@@ -119,7 +135,10 @@ export function planTransitOptions(
 
   if (journeys.length === 0) {
     if (directMeters <= WALK_FALLBACK_MAX_M) {
-      return { ok: true, data: [walkOnlyResult(directMeters, departureSecs)] };
+      return {
+        ok: true,
+        data: [walkOnlyResult(directMeters, departureSecs, originLat, originLng, destLat, destLng)],
+      };
     }
     return { ok: false, error: "경로를 찾을 수 없습니다." };
   }
@@ -136,14 +155,16 @@ export function planTransitOptions(
   const options = ranked.map(({ j }) => {
     const access = sourceOffset.get(j.legs[0].fromStop) ?? 0;
     const egress = targetOffset.get(j.legs[j.legs.length - 1].toStop) ?? 0;
-    return journeyToResult(tt, j, access, egress);
+    return journeyToResult(tt, j, access, egress, { originLat, originLng, destLat, destLng });
   });
 
   // 도보가 최선 경로보다 빠른 초근거리면 도보를 추천(첫 옵션)으로
   if (directMeters <= WALK_FALLBACK_MAX_M) {
     const walkArrival = departureSecs + walkSecsForMeters(directMeters);
     if (walkArrival <= ranked[0].j.arrivalSecs) {
-      options.unshift(walkOnlyResult(directMeters, departureSecs));
+      options.unshift(
+        walkOnlyResult(directMeters, departureSecs, originLat, originLng, destLat, destLng)
+      );
     }
   }
 

@@ -173,6 +173,80 @@ describe("동일역 장거리 환승 (도쿄역 게이요선 케이스)", () => 
   });
 });
 
+describe("노선 선형 (shapes)", () => {
+  /** makeInput + 선형: A—B—C 직선 위 공선점 1개 + B—C 사이 코너점 1개 */
+  function makeShapeInput(): GtfsInput {
+    const input = makeInput();
+    // 각역정차 trip(t1, t2)과 급행이 같은 shape를 공유하되 정차 dist가 다름
+    input.trips[0].shapeId = "S1";
+    input.trips[0].stopDists = [0, 1.11, 2.3]; // A, B, C (km)
+    input.trips[1].shapeId = "S1";
+    input.trips[1].stopDists = [2.3, 0, 1.11]; // stop_sequence가 섞인 입력과 같은 순서
+    input.trips[2].shapeId = "S1";
+    input.trips[2].stopDists = [0, 2.3]; // 급행: A, C
+    input.shapes = new Map([
+      [
+        "S1",
+        [
+          // [lat, lon, dist] × N
+          35.0, 139.0, 0, // A 앵커
+          35.005, 139.0, 0.55, // 공선점 — 단순화로 제거 기대
+          35.01, 139.0, 1.11, // B 앵커
+          35.015, 139.002, 1.7, // 코너 (~180m 이탈) — 유지 기대
+          35.02, 139.0, 2.3, // C 앵커
+        ],
+      ],
+    ]);
+    return input;
+  }
+
+  const t = buildTimetable(makeShapeInput());
+  const localRoute = t.tripRouteIndex[t.tripIds.indexOf("t1")];
+  const expressRoute = t.tripRouteIndex[t.tripIds.indexOf("express")];
+
+  it("각 정차역이 선형의 단조 증가 위치에 앵커링", () => {
+    const base = t.routeStopsIndex[localRoute];
+    const n = t.routeStopsIndex[localRoute + 1] - base;
+    const positions = [];
+    for (let p = 0; p < n; p++) positions.push(t.routeStopShapePos[base + p]);
+    expect(positions.every((v) => v >= 0)).toBe(true);
+    for (let p = 1; p < n; p++) expect(positions[p]).toBeGreaterThan(positions[p - 1]);
+    // 첫/끝 앵커 = 슬라이스 경계
+    expect(positions[0]).toBe(t.routeShapeIndex[localRoute]);
+    expect(positions[n - 1]).toBe(t.routeShapeIndex[localRoute + 1] - 1);
+  });
+
+  it("공선점은 단순화로 제거, 코너점은 유지", () => {
+    // 각역 route: A, B(앵커), 코너, C — 공선점(0.55km)만 제거되어 4점
+    const len = t.routeShapeIndex[localRoute + 1] - t.routeShapeIndex[localRoute];
+    expect(len).toBe(4);
+    // 급행 route: A→C 단일 구간 — 코너로 인해 B 통과점도 굴곡점으로 유지, 공선점만 제거 → 4점
+    const expLen = t.routeShapeIndex[expressRoute + 1] - t.routeShapeIndex[expressRoute];
+    expect(expLen).toBe(4);
+    // 코너 좌표가 실제로 살아있는지
+    const corner = [...t.shapeLats.slice(t.routeShapeIndex[expressRoute], t.routeShapeIndex[expressRoute + 1])];
+    expect(corner.some((lat) => Math.abs(lat - 35.015) < 1e-4)).toBe(true);
+  });
+
+  it("shape 정보가 없는 입력은 빈 선형 + stopPos -1 (폴백)", () => {
+    const plain = buildTimetable(makeInput());
+    expect(plain.shapeLats.length).toBe(0);
+    expect([...plain.routeStopShapePos].every((v) => v === -1)).toBe(true);
+    const nRoutes = plain.routeShapeIndex.length - 1;
+    for (let r = 0; r < nRoutes; r++) {
+      expect(plain.routeShapeIndex[r]).toBe(plain.routeShapeIndex[r + 1]);
+    }
+  });
+
+  it("선형 필드 직렬화 라운드트립", () => {
+    const restored = deserializeTimetable(serializeTimetable(t));
+    expect([...restored.shapeLats]).toEqual([...t.shapeLats]);
+    expect([...restored.shapeLons]).toEqual([...t.shapeLons]);
+    expect([...restored.routeShapeIndex]).toEqual([...t.routeShapeIndex]);
+    expect([...restored.routeStopShapePos]).toEqual([...t.routeStopShapePos]);
+  });
+});
+
 describe("거리/도보시간", () => {
   it("haversine 대략값 (신주쿠→시부야 약 3.4km)", () => {
     const d = haversineMeters(35.6896, 139.7006, 35.658, 139.7016);

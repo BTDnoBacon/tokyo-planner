@@ -109,8 +109,10 @@ GTFS zip ─→ 파싱·정규화 ─→ 바이너리    1단계: Next.js 서버
       Pareto 후보 중 "도착시각 + 환승당 3분 페널티" 최소 선택)
 - [x] 결과 → `TransitStep[]` 매핑 (`src/lib/engine/geo.ts`) — 한국어 역명, 노선색(route_color),
       직통 구간 "(직통)" 표기, 접근/이탈 도보 포함. 이동시간 = 도보+승차 (첫차 대기 제외)
-- [x] 지도 전철 폴리라인 — shapes 대신 **정차역 좌표 연결** (경유역 포함, 노선색 표시).
-      shapes.txt 기반 실선형은 백로그 (bin +수 MB 트레이드오프)
+- [x] 지도 전철 폴리라인 — ~~정차역 좌표 연결~~ → **shapes.txt 실선형** (2026-08-28 완료).
+      패턴 2,403개 전량 매핑 (stop_times의 shape_dist_traveled로 정차역 앵커링),
+      Douglas-Peucker 12m 단순화로 476,682 → 159,723점 (bin +1.3MB, gzip 2.7MB).
+      접근·환승·이탈 도보는 회색 점선으로 표시 (포맷 v2, Worker 구버전 캐시 자동 복구 포함)
 - [x] Vercel 배포 대응 — `pnpm build`가 `prepare.ts` 선행 (데이터 없으면 zip 다운로드→추출→
       파이프라인 자동 실행), `outputFileTracingIncludes`로 서버리스 번들에 bin 포함
 - [x] 검증: 테스트 58개 (geo 순수 함수 + 실데이터 통합) + 브라우저 E2E
