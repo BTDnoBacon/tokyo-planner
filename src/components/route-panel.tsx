@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRoutes } from "@/lib/routes-context";
 import { usePlaces } from "@/lib/places-context";
 
 function todayString() {
-  return new Date().toISOString().slice(0, 10);
+  // toISOString은 UTC라 KST 오전에는 어제 날짜가 나옴 — 로컬 기준 YYYY-MM-DD
+  return new Date().toLocaleDateString("sv-SE");
 }
 
 function formatDate(dateStr: string) {
@@ -21,6 +22,14 @@ export default function RoutePanel() {
   const [routeName, setRouteName] = useState("");
   const [routeDate, setRouteDate] = useState(todayString());
   const [editingDateId, setEditingDateId] = useState<string | null>(null);
+  const [overwriteSaved, setOverwriteSaved] = useState(false);
+
+  // "저장됨 ✓" 피드백을 잠시 보여준 뒤 원복
+  useEffect(() => {
+    if (!overwriteSaved) return;
+    const timer = setTimeout(() => setOverwriteSaved(false), 1500);
+    return () => clearTimeout(timer);
+  }, [overwriteSaved]);
 
   // 전체 일차 통틀어 장소 수 — 저장 버튼 활성 조건
   const totalPlaceCount = days.reduce((sum, day) => sum + day.places.length, 0);
@@ -31,6 +40,13 @@ export default function RoutePanel() {
     setActiveRouteId(route.id);
     setSaving(false);
     setRouteName("");
+  }
+
+  // 활성 루트에 현재 편집 내용 덮어쓰기 — 이름·날짜는 유지
+  function handleOverwrite() {
+    if (!activeRouteId || totalPlaceCount === 0) return;
+    updateRoute(activeRouteId, { days });
+    setOverwriteSaved(true);
   }
 
   function handleLoad(id: string) {
@@ -44,13 +60,28 @@ export default function RoutePanel() {
     <div className="px-4 py-3 border-b border-zinc-100">
       <div className="flex items-center justify-between mb-2">
         <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">저장된 루트</span>
-        <button
-          onClick={() => setSaving((v) => !v)}
-          disabled={totalPlaceCount === 0}
-          className="text-xs px-2 py-0.5 rounded-full bg-red-500 text-white hover:bg-red-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          {saving ? "취소" : "+ 저장"}
-        </button>
+        <div className="flex items-center gap-1">
+          {activeRouteId && (
+            <button
+              onClick={handleOverwrite}
+              disabled={totalPlaceCount === 0}
+              className="text-xs px-2 py-0.5 rounded-full bg-red-500 text-white hover:bg-red-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {overwriteSaved ? "저장됨 ✓" : "저장"}
+            </button>
+          )}
+          <button
+            onClick={() => setSaving((v) => !v)}
+            disabled={totalPlaceCount === 0}
+            className={`text-xs px-2 py-0.5 rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+              activeRouteId
+                ? "border border-zinc-200 text-zinc-500 hover:border-red-300 hover:text-red-500"
+                : "bg-red-500 text-white hover:bg-red-600"
+            }`}
+          >
+            {saving ? "취소" : activeRouteId ? "+ 새 루트" : "+ 저장"}
+          </button>
+        </div>
       </div>
 
       {/* 저장 폼 */}
@@ -130,7 +161,9 @@ export default function RoutePanel() {
                     </div>
                   </div>
                   <button
-                    onClick={() => deleteRoute(route.id)}
+                    onClick={() => {
+                      if (window.confirm(`'${route.name}' 루트를 삭제할까요?`)) deleteRoute(route.id);
+                    }}
                     className="shrink-0 text-zinc-300 hover:text-red-400 transition-colors text-base leading-none mt-0.5"
                     aria-label="루트 삭제"
                   >
