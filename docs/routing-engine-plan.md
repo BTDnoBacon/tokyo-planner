@@ -78,12 +78,20 @@ GTFS zip ─→ 파싱·정규화 ─→ 바이너리    1단계: Next.js 서버
 - [x] 테스트 33개 (CSV 엣지케이스, 캘린더, 라운드트립, 그룹핑·직통·환승 합성)
 - 실행: `pnpm data:build` → `data/engine/tokyo-rail.bin` (gitignore). 전체 파이프라인 1.5초
 
-### Phase 2 — RAPTOR 코어 (2~4주, 프로젝트의 심장)
-- [ ] 기본 RAPTOR: 최조 도착 + 환승 횟수 Pareto (원 논문: Delling et al., ALENEX 2012)
-- [ ] `block_id` 직통운전 처리 (in-seat transfer)
-- [ ] footpath 전이적 폐쇄 보장 (RAPTOR 정확성 전제조건)
+### Phase 2 — RAPTOR 코어 (코어 완료 2026-08-28)
+- [x] 기본 RAPTOR (`src/lib/engine/raptor.ts`) — 최조 도착 + 환승 횟수 Pareto, 멀티 소스/타겟
+      (도보 오프셋), 서비스 캘린더 날짜 필터, 타겟 프루닝, 경로 복원(leg 단위)
+- [x] 직통운전 처리 — transfers.txt(transfer_type 4) 기반. route 스캔에서 종점 도달 시
+      continuation trip으로 같은 라운드(탑승 카운트 불변) 전파, 체인(3사 직통) 지원.
+      실데이터 확인: 도요코선→후쿠토신선 "(직통) 환승 0회" 정상 출력
+- [x] 심야 시각(24h+) 지원 — 서비스일 기준 25:00 표기 그대로 탐색 (24:30 신주쿠→시부야 검증)
+- [x] 테스트 16개 (TDD: 급행 선택, dep==ready 경계, 캘린더, 도보 환승·미달 배제, 직통 0환승,
+      Pareto 2건 반환, maxTransfers, 심야) — 구현 전 작성, 첫 실행 전건 통과
+- [x] 스모크 CLI (`scripts/gtfs/query.ts`) — 한국어 역명 검색, **쿼리 5~20ms / 로드 ~10ms**
+      (신주쿠→시부야 4분 사이쿄선, 신주쿠→오테마치 미타선 환승 등 실제와 부합)
 - [ ] **검증 셋 구축**: 대표 구간 30~50개를 구글맵/Transitous 결과와 자동 대조하는 테스트
 - [ ] 대형 환승역(신주쿠·도쿄·시부야 등) 도보시간 수작업 오버라이드 테이블
+- 참고: footpath 전이적 폐쇄 대신 "라운드당 도보 1회" 방식 채택 (동등 정확성, 원 논문 각주 방식)
 
 ### Phase 3 — 앱 통합 (1주)
 - [ ] `fetchDirections`의 transit 분기를 자체 엔진(서버 실행)으로 교체, NAVITIME 제거
