@@ -1,0 +1,119 @@
+# 자체 경로탐색 엔진 전환 계획
+
+> 2026-08-28 조사 기준. NAVITIME API를 오픈데이터 기반 자체 경로탐색 엔진으로 교체하는 로드맵.
+> 조사 범위: ODPT 라이선스·커버리지, 대안 데이터 소스, 라우팅 알고리즘·구현체.
+
+## 0. 결론 요약
+
+- **프로젝트 근거 (2026-08-28 확인)**: Google Directions/Routes API는 **일본 대중교통(transit) 경로를 제공하지 않는다** (available_travel_modes에 TRANSIT 없음 — 소비자용 구글맵 앱과 달리 API로는 불가). 개발자가 쓸 수 있는 일본 전철 경로 API는 NAVITIME·駅すぱあと 등 유료 상용뿐 → 자체 엔진의 실질 가치가 여기서 나온다. NAVITIME을 썼던 이유이자, 이 프로젝트가 대체하는 지점.
+- **실현 가능하다.** 수도권 36개 철도 사업자를 통합한 GTFS(TokyoGTFS)가 존재하고, 브라우저에서 도시권 규모 RAPTOR 라우팅이 돌아간다는 것은 기존 구현체(minotor, 스위스 전국)로 실증돼 있다.
+- **알고리즘은 RAPTOR.** 전처리 불필요, 자료구조 단순, "도착시각 × 환승횟수" Pareto 결과가 기본형에서 나옴. 확장으로 rRAPTOR(출발시간 범위 검색).
+- **"자체 API 제공" 백업 플랜은 조건부로만 유효.** ODPT 기본 라이선스는 원데이터(및 복원 가능한 가공 데이터)의 재배포·재제공을 서면 승낙 없이 금지한다. **경로탐색 "결과"만 반환하는 API는 일반적으로 허용 해석**이지만, 시각표 데이터를 그대로 내보내는 API는 불가. 설계 단계부터 이 경계를 지킨다.
+- **운임 계산은 스코프에서 제외하고 시작한다.** 일본 철도 운임의 오픈데이터는 존재하지 않는다 (JR은 규칙 기반 자체 계산 가능, 사철은 수작업 테이블 필요 — 후순위 확장).
+
+## 1. 데이터 소스 결정
+
+### 1차 소스: TokyoGTFS (`https://mkuran.pl/gtfs/tokyo/rail.zip`)
+- 수도권 36개 철도 사업자 통합 GTFS. shapes(선형) 포함. API 키 불필요, 출력물 MIT.
+- **직통운전(직결운행)을 `block_id`로 표현** — 라우터가 in-seat transfer를 지원해야 함. 도쿄 특화 핵심 요건.
+- Transitous(공개 MOTIS 인스턴스)도 이 피드를 사용 중 → 검증 비교 기준으로 활용 가능.
+- ⚠️ 리스크: 원천이 ODPT 데이터의 변환·재배포라 라이선스 회색지대 + 개인 메인테이너 의존.
+  개인 프로젝트/포트폴리오 용도로는 낮은 리스크, 상용 전환 시 재검토 필요.
+
+### 2차 소스: ODPT 직접 (developer.odpt.org)
+- 상시 제공: 도쿄메트로(기본 라이선스), 도에이(CC BY 4.0), TWR·TX·요코하마지하철 등. 무료 등록, 승인 ~2영업일.
+- **JR동일본 + 대형 사철 8사(도큐·오다큐·게이오·세이부·도부·게이큐·소테츠)는 "챌린지 2026 한정"** — 챌린지 응모 전제, **2027-03-14 이용 종료**, JR동일본은 경합 서비스 개발 금지 조항 있음.
+- GTFS-RT(실시간 지연·열차 위치)는 이 경로로만 확보 가능 → 실시간 기능 단계에서 도입.
+
+### 라이선스 경계 (자체 API 제공 시)
+| 행위 | 가능 여부 |
+|---|---|
+| 내 앱 안에서 경로탐색 결과 표시 | ✅ 가능 (출처 표기 의무) |
+| 경로탐색 결과만 반환하는 공개 API | ⚠️ 일반적으로 허용 해석 (원데이터 복원 불가) — 공식 해석 문서는 없음 |
+| 시각표·역 데이터를 반환하는 공개 API | ❌ ODPT 서면 승낙 필요 (CC BY인 도에이분 제외) |
+
+## 2. 아키텍처
+
+```
+[빌드 타임 - Node]                     [런타임]
+GTFS zip ─→ 파싱·정규화 ─→ 바이너리    1단계: Next.js 서버(fetchDirections 교체)
+            (평탄 배열,    직렬화 ─→   2단계: Web Worker + Cache Storage
+             날짜별 필터)  (~수십MB)           (오프라인 PWA)
+```
+
+- minotor(github.com/aubryio/minotor)가 실증한 패턴. 직접 구현하되 minotor·planarnetwork/raptor 코드를 참조.
+  (지름길이 필요하면 minotor 채택 후 도쿄 특화만 보강하는 선택지도 있음)
+- 기존 UI·플래너 레이어는 그대로 유지. `fetchDirections`의 NAVITIME 분기만 자체 엔진으로 교체.
+  `TransitStep` 타입(노선명·환승역·소요분·노선색)이 이미 있어 반환 형태가 자연스럽게 맞음.
+
+### 외부 API 최종 분담 (2026-08-28 결정)
+| 역할 | 담당 | 비고 |
+|---|---|---|
+| 전철 경로·시간 (transit) | **자체 엔진** | NAVITIME 완전 제거 |
+| 지도 표시·역지오코딩 | Google Maps JS API | 유지 결정 — 지도는 구글이 최선 |
+| 도보·택시 시간 | Google Routes API | 유지 (일본에서 WALK/DRIVE는 API 지원됨) |
+
+## 3. 단계별 로드맵
+
+### Phase 0 — 준비 (완료 2026-08-28)
+- [x] TokyoGTFS rail.zip 다운로드 + 실측 → `data/gtfs/rail.zip` (gitignore됨)
+  - **zip 21MB / 사업자 46 / 노선 165 / 정류장 2,896 / trip 91,707 / stop_times 1,208,008행**
+  - `transfers.txt` 27,024행 존재 → 도보 환승 데이터가 이미 상당 부분 제공됨 (Phase 1 합성 부담 감소)
+  - `shapes.txt` 476,682행 → Phase 3 지도 polyline에 활용
+  - calendar 4행 + calendar_dates 51행 → 서비스 패턴 단순 (평일/주말 체계)
+- [ ] ODPT 개발자 등록 — 사용자 직접 진행 필요 (무료, 승인 ~2영업일). TokyoGTFS 우선 전략이라 당장 필수 아님, 챌린지 2026 엔트리 결정(§5) 시점에 함께
+- [x] draft 자동 저장 구현 — 새로고침 시 플랜 유실 수정 (storage.ts / places-context / routes-context, Playwright로 복원·저장 양방향 검증)
+
+### Phase 1 — 데이터 파이프라인 (1~2주)
+- [ ] GTFS 파싱 (stops/routes/trips/stop_times/calendar/transfers)
+- [ ] RAPTOR용 평탄 배열 재구성 + 날짜별 서비스 필터링
+- [ ] 바이너리 직렬화 (protobuf 또는 자체 포맷) — 클라이언트 로드 대비
+- [ ] 반경 기반 도보 환승(footpath) 합성: 좌표 반경 내 정류장 쌍 × 보행속도 × 우회계수 1.3
+      (도쿄는 같은 역명이라도 사업자별 stop이 분리 — 예: 오테마치 4개 노선 — 이 단계가 필수)
+
+### Phase 2 — RAPTOR 코어 (2~4주, 프로젝트의 심장)
+- [ ] 기본 RAPTOR: 최조 도착 + 환승 횟수 Pareto (원 논문: Delling et al., ALENEX 2012)
+- [ ] `block_id` 직통운전 처리 (in-seat transfer)
+- [ ] footpath 전이적 폐쇄 보장 (RAPTOR 정확성 전제조건)
+- [ ] **검증 셋 구축**: 대표 구간 30~50개를 구글맵/Transitous 결과와 자동 대조하는 테스트
+- [ ] 대형 환승역(신주쿠·도쿄·시부야 등) 도보시간 수작업 오버라이드 테이블
+
+### Phase 3 — 앱 통합 (1주)
+- [ ] `fetchDirections`의 transit 분기를 자체 엔진(서버 실행)으로 교체, NAVITIME 제거
+- [ ] 결과 → `TransitStep[]` 매핑 (노선색은 GTFS route_color)
+- [ ] shapes.txt로 지도에 전철 경로 polyline 렌더 (현재 도보만 그려지는 것 개선)
+
+### Phase 4 — 오프라인 PWA (2~3주)
+- [ ] 라우팅을 Web Worker로 이동, 바이너리 시간표를 Cache Storage에 저장
+- [ ] Service Worker + 매니페스트 (여행지에서 데이터 없이 경로계산)
+- [ ] rRAPTOR: 출발시간 범위 검색 ("9시~10시 사이 출발" 시나리오)
+
+### Phase 5 — 선택 확장 (백로그)
+- 운임: JR 규칙 기반 계산(참고: github.com/xkikeg/ares) + 사철 운임표 → 또는 駅すぱあと API 프리플랜
+- 실시간 지연 반영: ODPT GTFS-RT
+- 경로탐색 결과 API 공개 (라이선스 경계 §1 준수)
+- 챌린지 2026 출품
+
+## 4. 리스크
+
+| 리스크 | 대응 |
+|---|---|
+| TokyoGTFS 재배포 중단/라이선스 문제 | ODPT 직접 파이프라인을 Phase 5에 예비 (변환 로직 자체 구현) |
+| JR·사철 ODPT 데이터 2027-03-14 종료 | 챌린지 데이터에 의존하지 않는 TokyoGTFS 우선 전략 유지 |
+| 정확성 검증 난이도 (직통운전·심야·캘린더 예외) | Phase 2 자동 대조 테스트를 처음부터 구축 |
+| 성능 미달 | 도쿄 철도만은 RAPTOR 논문 벤치마크(런던 전체)보다 작음 — 리스크 낮음. 실측으로 확인 |
+
+## 5. 열린 결정
+
+1. **챌린지 2026 응모 여부** — 응모하면 JR동일본·대형 사철 공식 데이터 + GTFS-RT를 쓸 수 있고 출품 이력도 남음. 단 2027-03 이후 해당 데이터 제거 의무, JR 경합 금지 조항 확인 필요.
+2. **직접 구현 vs minotor 채택** — 학습 가치는 직접 구현, 속도는 minotor. 권장: RAPTOR 코어는 직접 구현(이 프로젝트의 존재 이유), 전처리·직렬화는 minotor 패턴 차용.
+
+## 참고 자료
+
+- RAPTOR 논문: https://www.microsoft.com/en-us/research/wp-content/uploads/2012/01/raptor_alenex.pdf
+- 분야 서베이: https://arxiv.org/pdf/1504.05140
+- TokyoGTFS: https://github.com/MKuranowski/TokyoGTFS
+- minotor (TS/브라우저 RAPTOR): https://github.com/aubryio/minotor
+- Transitous (검증 비교용): https://transitous.org
+- ODPT 개발자: https://developer.odpt.org (기본 라이선스: /terms/data_basic_license.html)
+- 챌린지 2026: https://challenge2026.odpt.org

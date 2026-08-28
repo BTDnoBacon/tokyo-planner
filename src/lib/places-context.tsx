@@ -1,7 +1,8 @@
 "use client";
 
-import { createContext, useContext, useState, useCallback } from "react";
+import { createContext, useContext, useState, useCallback, useEffect } from "react";
 import type { DayPlan, Place, Transit, TransportMode, TransitStep } from "./types";
+import { loadDraft, saveDraft } from "./storage";
 
 interface PlacesContextValue {
   places: Place[];
@@ -48,6 +49,23 @@ export function PlacesProvider({ children }: { children: React.ReactNode }) {
   }));
   const [directionsResults, setDirectionsResults] = useState<Record<string, google.maps.DirectionsResult>>({});
   const [transitSteps, setTransitStepsState] = useState<Record<string, TransitStep[]>>({});
+  // draft 복원 완료 전에는 저장하지 않음 — 초기 빈 상태가 기존 draft를 덮어쓰는 것 방지
+  const [draftLoaded, setDraftLoaded] = useState(false);
+
+  useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect --
+       localStorage는 SSR에 없으므로 마운트 후 복원. lazy initializer는 하이드레이션 불일치 발생 */
+    const draft = loadDraft();
+    if (draft) setPlan(draft);
+    setDraftLoaded(true);
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, []);
+
+  useEffect(() => {
+    if (!draftLoaded) return;
+    const timer = setTimeout(() => saveDraft(plan), 400);
+    return () => clearTimeout(timer);
+  }, [plan, draftLoaded]);
 
   const { days, activeDayIndex } = plan;
   const activeDay = days[activeDayIndex] ?? EMPTY_DAY;

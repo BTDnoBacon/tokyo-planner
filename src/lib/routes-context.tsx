@@ -8,7 +8,7 @@ import {
   useEffect,
 } from "react";
 import type { Route, DayPlan } from "./types";
-import { loadRoutes, saveRoutes } from "./storage";
+import { loadRoutes, saveRoutes, loadActiveRouteId, saveActiveRouteId } from "./storage";
 
 interface RoutesContextValue {
   routes: Route[];
@@ -26,10 +26,25 @@ export function RoutesProvider({ children }: { children: React.ReactNode }) {
   const [routes, setRoutes] = useState<Route[]>([]);
   const [activeRouteId, setActiveRouteId] = useState<string | null>(null);
 
-  // 초기 로드
+  // 초기 로드 — 저장된 activeRouteId는 실제 존재하는 루트일 때만 복원
+  const [hydrated, setHydrated] = useState(false);
   useEffect(() => {
-    setRoutes(loadRoutes());
+    /* eslint-disable react-hooks/set-state-in-effect --
+       localStorage는 SSR에 없으므로 마운트 후 복원. lazy initializer는 하이드레이션 불일치 발생 */
+    const loaded = loadRoutes();
+    setRoutes(loaded);
+    const savedId = loadActiveRouteId();
+    if (savedId && loaded.some((r) => r.id === savedId)) {
+      setActiveRouteId(savedId);
+    }
+    setHydrated(true);
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    saveActiveRouteId(activeRouteId);
+  }, [activeRouteId, hydrated]);
 
   const saveRoute = useCallback(
     (name: string, date: string, days: DayPlan[]): Route => {
