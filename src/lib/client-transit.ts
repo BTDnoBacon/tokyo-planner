@@ -6,13 +6,15 @@
  * DecompressionStream 부재 등)·타임아웃 시 null을 반환하며, 호출부(timeline)가
  * 서버 액션으로 폴백한다. 경로 없음 같은 정상적 실패는 그대로 전달한다.
  */
-import type { TransitRouteResponse } from "./engine/plan";
+import type { TransitRouteResponse, TransitOptionsResponse } from "./engine/plan";
 
 const WORKER_TIMEOUT_MS = 20000;
 
+type EngineResponse = TransitRouteResponse | TransitOptionsResponse;
+
 interface WorkerReply {
   id: number;
-  response?: TransitRouteResponse;
+  response?: EngineResponse;
   /** 인프라 실패 — 서버 폴백 신호 */
   infra?: string;
 }
@@ -20,7 +22,7 @@ interface WorkerReply {
 let worker: Worker | null = null;
 let workerBroken = false;
 let seq = 0;
-const pending = new Map<number, (r: TransitRouteResponse | null) => void>();
+const pending = new Map<number, (r: EngineResponse | null) => void>();
 
 function getWorker(): Worker | null {
   if (workerBroken || typeof window === "undefined" || typeof Worker === "undefined") return null;
@@ -54,7 +56,7 @@ function getWorker(): Worker | null {
   return worker;
 }
 
-function post(payload: Record<string, unknown>): Promise<TransitRouteResponse | null> {
+function post(payload: Record<string, unknown>): Promise<EngineResponse | null> {
   const w = getWorker();
   if (!w) return Promise.resolve(null);
   const id = ++seq;
@@ -80,7 +82,19 @@ export function computeTransitLocal(
   departureHour: number,
   travelDate?: string
 ): Promise<TransitRouteResponse | null> {
-  return post({ originLat, originLng, destLat, destLng, departureHour, travelDate });
+  return post({ originLat, originLng, destLat, destLng, departureHour, travelDate }) as Promise<TransitRouteResponse | null>;
+}
+
+/** 브라우저 엔진으로 대안 포함 전체 옵션 계산 — 인프라 실패 시 null */
+export function computeTransitOptionsLocal(
+  originLat: number,
+  originLng: number,
+  destLat: number,
+  destLng: number,
+  departureHour: number,
+  travelDate?: string
+): Promise<TransitOptionsResponse | null> {
+  return post({ options: true, originLat, originLng, destLat, destLng, departureHour, travelDate }) as Promise<TransitOptionsResponse | null>;
 }
 
 /** 시간표 선다운로드 — 앱 진입 시 호출해 오프라인 대비 (fire-and-forget) */

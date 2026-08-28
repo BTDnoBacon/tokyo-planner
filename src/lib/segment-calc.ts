@@ -7,10 +7,11 @@
  * - taxi: 구글 Routes API (서버 액션)
  */
 import type { Place, TransportMode, TransitStep } from "./types";
-import type { TransitPath } from "./engine/geo";
+import type { TransitPath, TransitResult } from "./engine/geo";
 import { distanceMeters, walkSecsForMeters } from "./engine/geo";
-import { computeTransitLocal } from "./client-transit";
-import { fetchDirections } from "./actions/directions";
+import { computeTransitLocal, computeTransitOptionsLocal } from "./client-transit";
+import { fetchDirections, fetchTransitOptions } from "./actions/directions";
+import type { TransitOptionsResponse } from "./engine/plan";
 
 /** 이 거리 미만이면 자동 계산 기본 모드를 도보로 */
 export const AUTO_WALK_THRESHOLD_M = 800;
@@ -95,4 +96,26 @@ async function computeSegmentInner(
 /** 자동 계산의 기본 모드 — 거리 기반 */
 export function autoMode(from: Place, to: Place): TransportMode {
   return segmentDistanceMeters(from, to) < AUTO_WALK_THRESHOLD_M ? "walk" : "transit";
+}
+
+export type { TransitResult };
+
+/** 전철 대안 경로 목록 — 브라우저 엔진 우선, 서버 폴백. 예외를 던지지 않음 */
+export async function computeSegmentOptions(
+  from: Place,
+  to: Place,
+  departureHour: number,
+  travelDate?: string
+): Promise<TransitOptionsResponse> {
+  try {
+    const local = await computeTransitOptionsLocal(
+      from.lat, from.lng, to.lat, to.lng, departureHour, travelDate
+    );
+    return (
+      local ??
+      (await fetchTransitOptions(from.lat, from.lng, to.lat, to.lng, departureHour, travelDate))
+    );
+  } catch {
+    return { ok: false, error: "경로 계산 중 네트워크 오류가 발생했습니다." };
+  }
 }

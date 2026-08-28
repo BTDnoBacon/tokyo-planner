@@ -7,7 +7,12 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Timetable } from "./engine/types";
 import { deserializeTimetable } from "./engine/format";
-import { planTransit, type TransitRouteResponse } from "./engine/plan";
+import {
+  planTransit,
+  planTransitOptions,
+  type TransitRouteResponse,
+  type TransitOptionsResponse,
+} from "./engine/plan";
 
 const BIN_PATH = join(process.cwd(), "data", "engine", "tokyo-rail.bin");
 
@@ -20,7 +25,24 @@ export function loadTimetable(): Timetable {
   return cached;
 }
 
-export type { TransitRouteResponse };
+export type { TransitRouteResponse, TransitOptionsResponse };
+
+export function computeTransitOptions(
+  originLat: number,
+  originLng: number,
+  destLat: number,
+  destLng: number,
+  departureHour: number,
+  travelDate?: string
+): TransitOptionsResponse {
+  let tt: Timetable;
+  try {
+    tt = loadTimetable();
+  } catch {
+    return { ok: false, error: "시간표 데이터가 없습니다 (pnpm data:build 필요)." };
+  }
+  return planTransitOptions(tt, originLat, originLng, destLat, destLng, departureHour, travelDate);
+}
 
 export function computeTransitRoute(
   originLat: number,

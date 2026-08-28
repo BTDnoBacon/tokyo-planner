@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { usePlaces } from "@/lib/places-context";
 import { useTravelDate } from "@/lib/use-travel-date";
-import { computeSegment } from "@/lib/segment-calc";
+import { computeSegment, computeSegmentOptions, type TransitResult } from "@/lib/segment-calc";
 import type { TransportMode, TransitStep } from "@/lib/types";
 
 function formatTime(totalMinutes: number) {
@@ -78,6 +78,8 @@ function TransitBlock({
   const [isPending, startTransition] = useTransition();
   const [autoError, setAutoError] = useState<string | null>(null);
   const [showSteps, setShowSteps] = useState(false);
+  // 대안 경로 목록 (열려 있을 때만 값 존재 — 재계산이 싸서 캐시하지 않음)
+  const [options, setOptions] = useState<TransitResult[] | null>(null);
 
   const currentMode: TransportMode = transit?.mode ?? "walk";
   const currentMin = transit?.minutes ?? 15;
@@ -92,6 +94,7 @@ function TransitBlock({
     const day = activeDayIndex; // 결과는 클릭 시점의 일차에 기록
     setAutoError(null);
     setShowSteps(false);
+    setOptions(null);
     setDirectionsResult(fromId, toId, null);
     setTransitSteps(fromId, toId, null);
     setTransitPaths(fromId, toId, null);
@@ -139,6 +142,37 @@ function TransitBlock({
     if (!isNaN(val) && val > 0) updateTransit(fromId, toId, currentMode, val);
   }
 
+  // 대안 경로 목록 토글 — 엔진의 Pareto 집합(빠른 환승 vs 느린 직통 등)을 보여준다
+  function handleToggleOptions() {
+    if (options) {
+      setOptions(null);
+      return;
+    }
+    const from = places.find((p) => p.id === fromId);
+    const to = places.find((p) => p.id === toId);
+    if (!from || !to) return;
+    setAutoError(null);
+    startTransition(async () => {
+      const result = await computeSegmentOptions(from, to, departureHour, travelDate);
+      if (!result.ok) {
+        setAutoError(result.error);
+        return;
+      }
+      setOptions(result.data);
+    });
+  }
+
+  function handlePickOption(opt: TransitResult) {
+    const day = activeDayIndex;
+    const walkOnly = opt.steps.every((s) => s.type === "walk");
+    setSegmentForDay(day, fromId, toId, walkOnly ? "walk" : "transit", opt.durationMinutes);
+    setTransitSteps(fromId, toId, opt.steps.length > 0 ? opt.steps : null, day);
+    setTransitPaths(fromId, toId, opt.paths.length > 0 ? opt.paths : null, day);
+    setDirectionsResult(fromId, toId, null);
+    setOptions(null);
+    setShowSteps(opt.steps.some((s) => s.type === "train"));
+  }
+
   const currentOption = TRANSPORT_OPTIONS.find((o) => o.mode === currentMode)!;
 
   return (
@@ -180,8 +214,8 @@ function TransitBlock({
             <span className="text-xs text-zinc-500">{currentOption.icon} {currentOption.label}</span>
           </div>
 
-          {/* 2행: 상태/경로 보기 */}
-          {(isPending || (steps && steps.length > 0)) && (
+          {/* 2행: 상태/경로 보기/다른 경로 */}
+          {(isPending || (steps && steps.length > 0) || currentMode === "transit") && (
             <div className="flex items-center gap-1.5">
               {isPending && <span className="text-xs text-zinc-400">계산 중…</span>}
               {!isPending && steps && steps.length > 0 && (
@@ -192,12 +226,49 @@ function TransitBlock({
                   {showSteps ? "접기" : "경로 보기"}
                 </button>
               )}
+              {!isPending && currentMode === "transit" && (
+                <button
+                  onClick={handleToggleOptions}
+                  className="text-xs px-2.5 py-0.5 rounded-full border border-zinc-200 text-zinc-500 hover:border-zinc-400 hover:text-zinc-700 transition-colors"
+                >
+                  {options ? "닫기" : "다른 경로"}
+                </button>
+              )}
             </div>
           )}
         </div>
 
         {autoError && (
           <p className="text-xs text-red-400 ml-1">{autoError}</p>
+        )}
+
+        {/* 대안 경로 목록 — 선택하면 그 경로로 교체 */}
+        {options && (
+          <ul className="ml-1 mt-1 space-y-1">
+            {options.map((opt, i) => {
+              const lines = opt.steps
+                .filter((s) => s.type === "train")
+                .map((s) => s.lineName.split(" ")[0]);
+              return (
+                <li key={i}>
+                  <button
+                    onClick={() => handlePickOption(opt)}
+                    className="w-full rounded-lg border border-zinc-100 bg-white px-3 py-1.5 text-left hover:border-red-300 transition-colors"
+                  >
+                    <span className="text-xs font-medium text-zinc-700">
+                      {formatTime(Math.floor(opt.endSecs / 60))} 도착 · {opt.durationMinutes}분 ·{" "}
+                      {opt.transfers === 0 ? "환승 없음" : `환승 ${opt.transfers}회`}
+                    </span>
+                    {lines.length > 0 && (
+                      <span className="block truncate text-[11px] text-zinc-400">
+                        {lines.join(" → ")}
+                      </span>
+                    )}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
         )}
 
         {showSteps && steps && <TransitStepsList steps={steps} />}

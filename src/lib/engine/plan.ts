@@ -22,6 +22,14 @@ export type TransitRouteResponse =
   | { ok: true; data: TransitResult }
   | { ok: false; error: string };
 
+/** 대안 포함 응답 — data[0]이 추천 경로 */
+export type TransitOptionsResponse =
+  | { ok: true; data: TransitResult[] }
+  | { ok: false; error: string };
+
+/** 표시할 최대 대안 수 */
+const MAX_OPTIONS = 4;
+
 /** JST 기준 오늘 날짜(YYYYMMDD)와 현재 초 */
 function nowJst(): { date: number; secs: number } {
   const jst = new Date(Date.now() + 9 * 3600 * 1000);
@@ -48,10 +56,26 @@ function walkOnlyResult(meters: number, departureSecs: number): TransitResult {
     startSecs: departureSecs,
     endSecs: departureSecs + walkSecs,
     durationMinutes: minutes,
+    transfers: 0,
   };
 }
 
+/** 추천 경로 1개 (기존 API — planTransitOptions의 첫 옵션) */
 export function planTransit(
+  tt: Timetable,
+  originLat: number,
+  originLng: number,
+  destLat: number,
+  destLng: number,
+  departureHour: number,
+  travelDate?: string
+): TransitRouteResponse {
+  const result = planTransitOptions(tt, originLat, originLng, destLat, destLng, departureHour, travelDate);
+  return result.ok ? { ok: true, data: result.data[0] } : result;
+}
+
+/** Pareto 대안 포함 전체 경로 — data[0]이 추천 (도착시각+환승 페널티 최소) */
+export function planTransitOptions(
   tt: Timetable,
   originLat: number,
   originLng: number,
@@ -60,7 +84,7 @@ export function planTransit(
   departureHour: number,
   /** 여행 날짜 "YYYY-MM-DD" — 없으면 오늘(지났으면 내일) */
   travelDate?: string
-): TransitRouteResponse {
+): TransitOptionsResponse {
   const sources = nearbyPlatforms(tt, originLat, originLng);
   const targets = nearbyPlatforms(tt, destLat, destLng);
   if (sources.length === 0) return { ok: false, error: "출발지 주변 3km 내에 역이 없습니다." };
@@ -95,34 +119,33 @@ export function planTransit(
 
   if (journeys.length === 0) {
     if (directMeters <= WALK_FALLBACK_MAX_M) {
-      return { ok: true, data: walkOnlyResult(directMeters, departureSecs) };
+      return { ok: true, data: [walkOnlyResult(directMeters, departureSecs)] };
     }
     return { ok: false, error: "경로를 찾을 수 없습니다." };
   }
 
-  // Pareto 후보 중 "도착시각 + 환승 페널티" 최소를 선택
+  // "도착시각 + 환승 페널티" 오름차순 = 추천 순
   // (arrivalSecs는 이탈 도보 offset을 이미 포함 — 추가 가산 금지)
   const sourceOffset = new Map(sources.map((s) => [s.stop, s.walkSecs]));
   const targetOffset = new Map(targets.map((s) => [s.stop, s.walkSecs]));
-  let best = journeys[0];
-  let bestScore = Infinity;
-  for (const j of journeys) {
-    const score = j.arrivalSecs + j.transfers * TRANSFER_PENALTY_MIN * 60;
-    if (score < bestScore) {
-      bestScore = score;
-      best = j;
-    }
-  }
+  const ranked = journeys
+    .map((j) => ({ j, score: j.arrivalSecs + j.transfers * TRANSFER_PENALTY_MIN * 60 }))
+    .sort((a, b) => a.score - b.score)
+    .slice(0, MAX_OPTIONS);
 
-  // 도보가 열차보다 빠른 초근거리면 도보 폴백이 낫다
+  const options = ranked.map(({ j }) => {
+    const access = sourceOffset.get(j.legs[0].fromStop) ?? 0;
+    const egress = targetOffset.get(j.legs[j.legs.length - 1].toStop) ?? 0;
+    return journeyToResult(tt, j, access, egress);
+  });
+
+  // 도보가 최선 경로보다 빠른 초근거리면 도보를 추천(첫 옵션)으로
   if (directMeters <= WALK_FALLBACK_MAX_M) {
     const walkArrival = departureSecs + walkSecsForMeters(directMeters);
-    if (walkArrival <= best.arrivalSecs) {
-      return { ok: true, data: walkOnlyResult(directMeters, departureSecs) };
+    if (walkArrival <= ranked[0].j.arrivalSecs) {
+      options.unshift(walkOnlyResult(directMeters, departureSecs));
     }
   }
 
-  const access = sourceOffset.get(best.legs[0].fromStop) ?? 0;
-  const egress = targetOffset.get(best.legs[best.legs.length - 1].toStop) ?? 0;
-  return { ok: true, data: journeyToResult(tt, best, access, egress) };
+  return { ok: true, data: options.slice(0, MAX_OPTIONS) };
 }
