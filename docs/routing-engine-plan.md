@@ -58,18 +58,25 @@ GTFS zip ─→ 파싱·정규화 ─→ 바이너리    1단계: Next.js 서버
 ### Phase 0 — 준비 (완료 2026-08-28)
 - [x] TokyoGTFS rail.zip 다운로드 + 실측 → `data/gtfs/rail.zip` (gitignore됨)
   - **zip 21MB / 사업자 46 / 노선 165 / 정류장 2,896 / trip 91,707 / stop_times 1,208,008행**
-  - `transfers.txt` 27,024행 존재 → 도보 환승 데이터가 이미 상당 부분 제공됨 (Phase 1 합성 부담 감소)
+  - `transfers.txt` 27,024행 — 단, 전량 **transfer_type 4 (trip 간 직통운전)**. 도보 환승이 아니라
+    직통운전의 정본 데이터 (block_id보다 명시적). 도보 환승은 Phase 1에서 좌표 기반 합성
   - `shapes.txt` 476,682행 → Phase 3 지도 polyline에 활용
   - calendar 4행 + calendar_dates 51행 → 서비스 패턴 단순 (평일/주말 체계)
 - [ ] ODPT 개발자 등록 — 사용자 직접 진행 필요 (무료, 승인 ~2영업일). TokyoGTFS 우선 전략이라 당장 필수 아님, 챌린지 2026 엔트리 결정(§5) 시점에 함께
 - [x] draft 자동 저장 구현 — 새로고침 시 플랜 유실 수정 (storage.ts / places-context / routes-context, Playwright로 복원·저장 양방향 검증)
 
-### Phase 1 — 데이터 파이프라인 (1~2주)
-- [ ] GTFS 파싱 (stops/routes/trips/stop_times/calendar/transfers)
-- [ ] RAPTOR용 평탄 배열 재구성 + 날짜별 서비스 필터링
-- [ ] 바이너리 직렬화 (protobuf 또는 자체 포맷) — 클라이언트 로드 대비
-- [ ] 반경 기반 도보 환승(footpath) 합성: 좌표 반경 내 정류장 쌍 × 보행속도 × 우회계수 1.3
-      (도쿄는 같은 역명이라도 사업자별 stop이 분리 — 예: 오테마치 4개 노선 — 이 단계가 필수)
+### Phase 1 — 데이터 파이프라인 (완료 2026-08-28)
+- [x] GTFS 파싱 (`scripts/gtfs/csv.ts` — RFC4180, 따옴표/개행 지원, 121만 행 ~1초)
+- [x] RAPTOR용 평탄 배열 재구성 (`scripts/gtfs/transform.ts`) — **raptor route 2,403개**
+      (동일 정차 패턴 그룹핑), trip 91,707개, 직통운전 27,024쌍 100% 매핑
+- [x] 서비스 캘린더 (`src/lib/engine/calendar.ts`) — 요일 비트마스크 + exception 날짜, 런타임 날짜 필터용
+- [x] 바이너리 직렬화 (`src/lib/engine/format.ts`) — 자체 컨테이너(JSON 헤더 + raw typed array blob,
+      zero-copy 역직렬화). **출력 14.8MB / gzip 2.3MB**, 역직렬화 4ms
+- [x] 도보 환승 합성 — 반경 400m, 4.8km/h × 우회계수 1.3 + 버퍼 30s (하한 90s, 동일역 하한 120s)
+      → 2,716개 (대칭). 대형역 수작업 오버라이드는 Phase 2에서
+- [x] 한국어/영어 역명 병합 (translations.txt — ko/en 각 2,896역 전체)
+- [x] 테스트 33개 (CSV 엣지케이스, 캘린더, 라운드트립, 그룹핑·직통·환승 합성)
+- 실행: `pnpm data:build` → `data/engine/tokyo-rail.bin` (gitignore). 전체 파이프라인 1.5초
 
 ### Phase 2 — RAPTOR 코어 (2~4주, 프로젝트의 심장)
 - [ ] 기본 RAPTOR: 최조 도착 + 환승 횟수 Pareto (원 논문: Delling et al., ALENEX 2012)
