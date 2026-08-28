@@ -29,6 +29,9 @@ tsx scripts/gtfs/validate.ts 09:00 20260901        # Transitous 대조 검증 (�
 - pnpm이 PATH에 없는 환경에서는 `./node_modules/.bin/`의 바이너리(tsc, eslint, vitest,
   next, tsx)를 직접 실행하면 된다.
 - API 키는 `.env.local` (`.env.example` 참고). 키가 없어도 앱은 뜨고 지도·위젯만 에러 표시.
+- **Service Worker는 프로덕션 전용** — dev 청크는 이름에 해시가 없어 SW의 cache-first가
+  낡은 번들을 서빙한다 (수정이 반영 안 되는 것처럼 보임). sw-register가 dev에서는 등록을
+  건너뛰고 기존 등록을 해제하지만, 오염된 브라우저 프로필은 DevTools에서 SW 수동 해제 필요.
 
 ## 데이터
 
