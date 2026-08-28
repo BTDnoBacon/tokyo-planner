@@ -3,7 +3,7 @@
  * 서버(engine-server.ts)와 Web Worker(worker.ts)가 같은 코드를 사용한다.
  */
 import type { Timetable } from "./types";
-import { route as raptor } from "./raptor";
+import { route as raptor, routeRange } from "./raptor";
 import { activeServices } from "./calendar";
 import {
   nearbyPlatforms,
@@ -30,6 +30,11 @@ export type TransitOptionsResponse =
 /** 표시할 최대 대안 수 */
 const MAX_OPTIONS = 4;
 
+/** 출발 시간대 검색 기본 윈도 (분) */
+const DEFAULT_WINDOW_MINUTES = 60;
+/** 출발 시간대 목록 최대 엔트리 */
+const MAX_DEPARTURES = 8;
+
 /** JST 기준 오늘 날짜(YYYYMMDD)와 현재 초 */
 function nowJst(): { date: number; secs: number } {
   const jst = new Date(Date.now() + 9 * 3600 * 1000);
@@ -45,6 +50,32 @@ function addDays(date: number, days: number): number {
   const d = date % 100;
   const next = new Date(Date.UTC(y, m - 1, d) + days * 24 * 3600 * 1000);
   return next.getUTCFullYear() * 10000 + (next.getUTCMonth() + 1) * 100 + next.getUTCDate();
+}
+
+/**
+ * 출발 시각(초) + 여행 날짜 → 서비스일과 서비스일 기준 출발 초.
+ * 심야(0~4시)는 전날 서비스일의 24h+ 시각으로 표현 (GTFS 규약).
+ * 반환 null = 해당 날짜의 시간표 없음.
+ */
+function resolveDeparture(
+  tt: Timetable,
+  rawDepartureSecs: number,
+  travelDate?: string
+): { date: number; departureSecs: number } | null {
+  let date: number;
+  if (travelDate) {
+    date = Number(travelDate.replaceAll("-", ""));
+  } else {
+    const now = nowJst();
+    date = rawDepartureSecs <= now.secs ? addDays(now.date, 1) : now.date;
+  }
+  let departureSecs = rawDepartureSecs;
+  if (rawDepartureSecs < 4 * 3600) {
+    date = addDays(date, -1);
+    departureSecs += 24 * 3600;
+  }
+  if (activeServices(tt.services, date).size === 0) return null;
+  return { date, departureSecs };
 }
 
 function walkOnlyResult(
@@ -106,22 +137,11 @@ export function planTransitOptions(
   if (sources.length === 0) return { ok: false, error: "출발지 주변 3km 내에 역이 없습니다." };
   if (targets.length === 0) return { ok: false, error: "도착지 주변 3km 내에 역이 없습니다." };
 
-  let date: number;
-  if (travelDate) {
-    date = Number(travelDate.replaceAll("-", ""));
-  } else {
-    const now = nowJst();
-    date = departureHour * 3600 <= now.secs ? addDays(now.date, 1) : now.date;
-  }
-  // 심야(0~3시)는 전날 서비스일의 24h+ 시각으로 표현 (GTFS 규약)
-  let departureSecs = departureHour * 3600;
-  if (departureHour < 4) {
-    date = addDays(date, -1);
-    departureSecs += 24 * 3600;
-  }
-  if (activeServices(tt.services, date).size === 0) {
+  const resolved = resolveDeparture(tt, departureHour * 3600, travelDate);
+  if (!resolved) {
     return { ok: false, error: "해당 날짜의 시간표가 없습니다 (데이터 갱신 필요)." };
   }
+  const { date, departureSecs } = resolved;
 
   const directMeters = distanceMeters(originLat, originLng, destLat, destLng);
 
@@ -169,4 +189,54 @@ export function planTransitOptions(
   }
 
   return { ok: true, data: options.slice(0, MAX_OPTIONS) };
+}
+
+/**
+ * 출발 시간대 검색 (rRAPTOR) — departureMinutes(하루 기준 분)부터 windowMinutes 동안
+ * 출발지에서 나서는 여정들의 프로필. 출발 시각 오름차순, 각 엔트리는 지배되지 않는
+ * "이 시각에 나서면 가장 빨리 도착하는" 여정.
+ */
+export function planTransitDepartures(
+  tt: Timetable,
+  originLat: number,
+  originLng: number,
+  destLat: number,
+  destLng: number,
+  /** 하루 기준 출발 분 (자정 넘김은 24h+ 분으로: 25:30 → 1530) */
+  departureMinutes: number,
+  travelDate?: string,
+  windowMinutes: number = DEFAULT_WINDOW_MINUTES
+): TransitOptionsResponse {
+  const sources = nearbyPlatforms(tt, originLat, originLng);
+  const targets = nearbyPlatforms(tt, destLat, destLng);
+  if (sources.length === 0) return { ok: false, error: "출발지 주변 3km 내에 역이 없습니다." };
+  if (targets.length === 0) return { ok: false, error: "도착지 주변 3km 내에 역이 없습니다." };
+
+  const resolved = resolveDeparture(tt, departureMinutes * 60, travelDate);
+  if (!resolved) {
+    return { ok: false, error: "해당 날짜의 시간표가 없습니다 (데이터 갱신 필요)." };
+  }
+
+  const journeys = routeRange(tt, {
+    sources: sources.map(({ stop, walkSecs }) => ({ stop, offsetSecs: walkSecs })),
+    targets: targets.map(({ stop, walkSecs }) => ({ stop, offsetSecs: walkSecs })),
+    startSecs: resolved.departureSecs,
+    endSecs: resolved.departureSecs + windowMinutes * 60,
+    date: resolved.date,
+  }).filter((j) => j.legs.length > 0);
+
+  if (journeys.length === 0) {
+    return { ok: false, error: "이 시간대에 출발하는 경로가 없습니다." };
+  }
+
+  const sourceOffset = new Map(sources.map((s) => [s.stop, s.walkSecs]));
+  const targetOffset = new Map(targets.map((s) => [s.stop, s.walkSecs]));
+  const endpoints = { originLat, originLng, destLat, destLng };
+  const options = journeys.slice(0, MAX_DEPARTURES).map((j) => {
+    const access = sourceOffset.get(j.legs[0].fromStop) ?? 0;
+    const egress = targetOffset.get(j.legs[j.legs.length - 1].toStop) ?? 0;
+    return journeyToResult(tt, j, access, egress, endpoints);
+  });
+
+  return { ok: true, data: options };
 }

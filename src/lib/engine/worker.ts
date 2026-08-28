@@ -9,7 +9,7 @@
  * { id, infra } — 후자는 클라이언트가 서버 폴백으로 전환한다.
  */
 import { deserializeTimetable } from "./format";
-import { planTransit, planTransitOptions } from "./plan";
+import { planTransit, planTransitOptions, planTransitDepartures } from "./plan";
 import type { Timetable } from "./types";
 
 const DATA_URL = "/engine/tokyo-rail.bin.gz";
@@ -73,16 +73,23 @@ interface WorkerRequest {
   warmup?: boolean;
   /** true면 Pareto 대안 포함 전체 옵션 반환 */
   options?: boolean;
+  /** true면 출발 시간대 프로필 반환 (rRAPTOR) — departureMinutes 필요 */
+  profile?: boolean;
   originLat?: number;
   originLng?: number;
   destLat?: number;
   destLng?: number;
   departureHour?: number;
+  /** profile 전용 — 하루 기준 출발 분 */
+  departureMinutes?: number;
   travelDate?: string;
 }
 
 self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
-  const { id, warmup, options, originLat, originLng, destLat, destLng, departureHour, travelDate } = e.data;
+  const {
+    id, warmup, options, profile,
+    originLat, originLng, destLat, destLng, departureHour, departureMinutes, travelDate,
+  } = e.data;
 
   try {
     if (!timetable) {
@@ -105,13 +112,17 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
   }
 
   try {
-    const result = options
-      ? planTransitOptions(
-          timetable, originLat!, originLng!, destLat!, destLng!, departureHour!, travelDate
+    const result = profile
+      ? planTransitDepartures(
+          timetable, originLat!, originLng!, destLat!, destLng!, departureMinutes!, travelDate
         )
-      : planTransit(
-          timetable, originLat!, originLng!, destLat!, destLng!, departureHour!, travelDate
-        );
+      : options
+        ? planTransitOptions(
+            timetable, originLat!, originLng!, destLat!, destLng!, departureHour!, travelDate
+          )
+        : planTransit(
+            timetable, originLat!, originLng!, destLat!, destLng!, departureHour!, travelDate
+          );
     self.postMessage({ id, response: result });
   } catch (err) {
     // 계산 자체의 예외도 인프라성 — 서버 폴백 대상

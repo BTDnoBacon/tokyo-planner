@@ -10,6 +10,7 @@ import { deserializeTimetable } from "./engine/format";
 import {
   planTransit,
   planTransitOptions,
+  planTransitDepartures,
   type TransitRouteResponse,
   type TransitOptionsResponse,
 } from "./engine/plan";
@@ -42,6 +43,24 @@ export function computeTransitOptions(
     return { ok: false, error: "시간표 데이터가 없습니다 (pnpm data:build 필요)." };
   }
   return planTransitOptions(tt, originLat, originLng, destLat, destLng, departureHour, travelDate);
+}
+
+/** 출발 시간대 프로필 (rRAPTOR) — departureMinutes는 하루 기준 분 */
+export function computeTransitDepartures(
+  originLat: number,
+  originLng: number,
+  destLat: number,
+  destLng: number,
+  departureMinutes: number,
+  travelDate?: string
+): TransitOptionsResponse {
+  let tt: Timetable;
+  try {
+    tt = loadTimetable();
+  } catch {
+    return { ok: false, error: "시간표 데이터가 없습니다 (pnpm data:build 필요)." };
+  }
+  return planTransitDepartures(tt, originLat, originLng, destLat, destLng, departureMinutes, travelDate);
 }
 
 export function computeTransitRoute(

@@ -97,6 +97,18 @@ export function computeTransitOptionsLocal(
   return post({ options: true, originLat, originLng, destLat, destLng, departureHour, travelDate }) as Promise<TransitOptionsResponse | null>;
 }
 
+/** 브라우저 엔진으로 출발 시간대 프로필(rRAPTOR) 계산 — 인프라 실패 시 null */
+export function computeTransitDeparturesLocal(
+  originLat: number,
+  originLng: number,
+  destLat: number,
+  destLng: number,
+  departureMinutes: number,
+  travelDate?: string
+): Promise<TransitOptionsResponse | null> {
+  return post({ profile: true, originLat, originLng, destLat, destLng, departureMinutes, travelDate }) as Promise<TransitOptionsResponse | null>;
+}
+
 /** 시간표 선다운로드 — 앱 진입 시 호출해 오프라인 대비 (fire-and-forget) */
 export function warmupEngine(): void {
   void post({ warmup: true });
