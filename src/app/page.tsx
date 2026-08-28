@@ -14,12 +14,12 @@ export default function Home() {
   return (
     <RoutesProvider>
       <PlacesProvider>
-        <div className="flex h-full">
-          <Sidebar />
-          <main className="flex-1 relative">
+        {/* 모바일: 지도 전체 화면 + 플래너 바텀시트 / 데스크톱: 좌측 사이드바 */}
+        <div className="relative h-dvh overflow-hidden md:flex">
+          <main className="absolute inset-0 md:static md:relative md:flex-1">
             <MapViewDynamic />
-            {/* 지도 우측 상단 플로팅 위젯 */}
-            <div className="absolute top-3 right-3 flex flex-col gap-2 z-10 w-52 drop-shadow-md">
+            {/* 지도 우측 상단 플로팅 위젯 — 모바일에서는 지도 공간 확보를 위해 숨김 */}
+            <div className="absolute top-3 right-3 hidden md:flex flex-col gap-2 z-10 w-52 drop-shadow-md">
               <Suspense fallback={<WidgetSkeleton />}>
                 <WeatherWidget />
               </Suspense>
@@ -28,6 +28,7 @@ export default function Home() {
               </Suspense>
             </div>
           </main>
+          <Sidebar />
         </div>
       </PlacesProvider>
     </RoutesProvider>

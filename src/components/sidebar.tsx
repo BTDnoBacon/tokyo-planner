@@ -17,6 +17,8 @@ type Tab = "장소" | "타임라인";
 
 export default function Sidebar() {
   const [tab, setTab] = useState<Tab>("장소");
+  // 모바일 바텀시트 펼침 상태 (데스크톱에서는 무시됨)
+  const [sheetOpen, setSheetOpen] = useState(false);
   const { setActiveRouteId, routes, activeRouteId } = useRoutes();
   const { clearAll } = usePlaces();
   const activeRoute = routes.find((r) => r.id === activeRouteId) ?? null;
@@ -27,7 +29,19 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="w-80 shrink-0 flex flex-col border-r border-zinc-200 bg-white">
+    <aside
+      className={`absolute inset-x-0 bottom-0 z-20 flex flex-col overflow-hidden rounded-t-2xl border-t border-zinc-200 bg-white pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_30px_rgba(0,0,0,0.15)] transition-[height] duration-300 ${
+        sheetOpen ? "h-[75dvh]" : "h-40"
+      } md:static md:order-first md:h-full md:w-80 md:shrink-0 md:rounded-none md:border-r md:border-t-0 md:pb-0 md:shadow-none`}
+    >
+      {/* 모바일 시트 핸들 */}
+      <button
+        onClick={() => setSheetOpen((v) => !v)}
+        className="flex shrink-0 justify-center py-2 md:hidden"
+        aria-label={sheetOpen ? "플래너 접기" : "플래너 펼치기"}
+      >
+        <span className="h-1 w-10 rounded-full bg-zinc-300" />
+      </button>
       {/* 앱 헤더 */}
       <div className="px-5 py-4 border-b border-zinc-100 shrink-0">
         <div className="flex items-center justify-between">
@@ -56,7 +70,10 @@ export default function Sidebar() {
         {(["장소", "타임라인"] as Tab[]).map((t) => (
           <button
             key={t}
-            onClick={() => setTab(t)}
+            onClick={() => {
+              setTab(t);
+              setSheetOpen(true); // 모바일: 접힌 상태에서 탭을 누르면 펼침
+            }}
             className={`flex-1 py-2.5 text-sm font-medium transition-colors ${
               tab === t
                 ? "text-zinc-900 border-b-2 border-zinc-800 -mb-px"
