@@ -72,7 +72,8 @@ export default function Sidebar() {
             key={t}
             onClick={() => {
               setTab(t);
-              setSheetOpen(true); // 모바일: 접힌 상태에서 탭을 누르면 펼침
+              // 모바일에서만: 접힌 상태에서 탭을 누르면 펼침 (데스크톱 클릭이 상태를 오염시키지 않게)
+              if (window.matchMedia("(max-width: 767px)").matches) setSheetOpen(true);
             }}
             className={`flex-1 py-2.5 text-sm font-medium transition-colors ${
               tab === t

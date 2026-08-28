@@ -19,6 +19,8 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: "#ef4444",
+  // env(safe-area-inset-*)가 실제 값을 갖도록 필수 (바텀시트 하단 패딩)
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
