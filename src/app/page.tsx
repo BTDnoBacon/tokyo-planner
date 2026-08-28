@@ -6,6 +6,7 @@ import CurrencyWidget from "@/components/currency-widget";
 import MapViewDynamic from "@/components/map-view-dynamic";
 import Sidebar from "@/components/sidebar";
 import AutoTransit from "@/components/auto-transit";
+import SharedPlanLoader from "@/components/shared-plan-loader";
 
 function WidgetSkeleton() {
   return <div className="rounded-xl bg-white/80 border border-zinc-100 px-4 py-3 text-xs text-zinc-400 w-48">불러오는 중...</div>;
@@ -16,6 +17,7 @@ export default function Home() {
     <RoutesProvider>
       <PlacesProvider>
         <AutoTransit />
+        <SharedPlanLoader />
         {/* 모바일: 지도 전체 화면 + 플래너 바텀시트 / 데스크톱: 좌측 사이드바 */}
         <div className="relative h-dvh overflow-hidden md:flex">
           {/* 모바일: 접힌 시트(h-40) 위까지만 지도 — 구글 로고·컨트롤이 가려지지 않게 */}

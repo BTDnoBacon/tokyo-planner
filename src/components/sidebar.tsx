@@ -12,6 +12,7 @@ import PlaceList from "@/components/place-list";
 import Timeline from "@/components/timeline";
 import RoutePanel from "@/components/route-panel";
 import DayTabs from "@/components/day-tabs";
+import ShareButton from "@/components/share-button";
 
 type Tab = "장소" | "타임라인";
 
@@ -46,12 +47,15 @@ export default function Sidebar() {
       <div className="px-5 py-4 border-b border-zinc-100 shrink-0">
         <div className="flex items-center justify-between">
           <h1 className="text-lg font-semibold tracking-tight">🗼 Tokyo Planner</h1>
-          <button
-            onClick={handleNewRoute}
-            className="text-xs px-2.5 py-1 rounded-full border border-zinc-200 text-zinc-500 hover:border-red-300 hover:text-red-500 transition-colors"
-          >
-            + 새 루트
-          </button>
+          <div className="flex items-center gap-1.5">
+            <ShareButton />
+            <button
+              onClick={handleNewRoute}
+              className="text-xs px-2.5 py-1 rounded-full border border-zinc-200 text-zinc-500 hover:border-red-300 hover:text-red-500 transition-colors"
+            >
+              + 새 루트
+            </button>
+          </div>
         </div>
         {activeRoute && (
           <div className="mt-1.5 flex items-center gap-1.5">
