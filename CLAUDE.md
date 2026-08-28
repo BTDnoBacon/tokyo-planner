@@ -3,18 +3,21 @@
 도쿄 여행 동선 플래너 (Next.js 16 / React 19 / Tailwind 4). 지도에 장소를 찍어 일차별 동선을
 짜고, 이동 시간을 계산해 타임라인으로 보여준다.
 
-**현재 방향**: NAVITIME API를 오픈데이터(TokyoGTFS) 기반 자체 RAPTOR 경로탐색 엔진으로
-교체하는 중. 로드맵·데이터 소스·라이선스 제약은 `docs/routing-engine-plan.md`가 정본.
+**전철 경로는 자체 RAPTOR 엔진** (오픈데이터 TokyoGTFS 기반, NAVITIME 제거됨) —
+`src/lib/engine/` + 서버 진입점 `src/lib/engine-server.ts`. 도보/택시는 Google Routes API,
+지도 표시는 Google Maps. 로드맵·데이터 소스·라이선스 제약은 `docs/routing-engine-plan.md`가 정본.
 
 ## 명령어
 
 ```bash
-pnpm dev          # 개발 서버
-pnpm build        # 프로덕션 빌드
+pnpm dev          # 개발 서버 (전철 계산엔 data/engine/tokyo-rail.bin 필요 — 없으면 data:build)
+pnpm build        # 프로덕션 빌드 — prepare.ts가 시간표 데이터 없으면 자동 다운로드·생성 (Vercel 대응)
 pnpm lint         # eslint
 pnpm typecheck    # tsc --noEmit
-pnpm test         # vitest run
-pnpm data:build   # GTFS → data/engine/tokyo-rail.bin 빌드 (사전: extracted/ 필요, 아래 참고)
+pnpm test         # vitest run (실데이터 통합 테스트는 bin 있을 때만 실행)
+pnpm data:build   # GTFS → data/engine/tokyo-rail.bin 빌드 (입력: data/gtfs/extracted/)
+tsx scripts/gtfs/query.ts 신주쿠 시부야 09:00      # 경로 스모크 CLI
+tsx scripts/gtfs/validate.ts 09:00 20260901        # Transitous 대조 검증 (네트워크 필요)
 ```
 
 ## 환경 주의사항

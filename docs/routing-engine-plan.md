@@ -101,10 +101,18 @@ GTFS zip ─→ 파싱·정규화 ─→ 바이너리    1단계: Next.js 서버
       드러나지 않아 후순위 백로그로 이동 (앱 실사용 피드백 기반으로 채움)
 - 참고: footpath 전이적 폐쇄 대신 "라운드당 도보 1회" 방식 채택 (동등 정확성, 원 논문 각주 방식)
 
-### Phase 3 — 앱 통합 (1주)
-- [ ] `fetchDirections`의 transit 분기를 자체 엔진(서버 실행)으로 교체, NAVITIME 제거
-- [ ] 결과 → `TransitStep[]` 매핑 (노선색은 GTFS route_color)
-- [ ] shapes.txt로 지도에 전철 경로 polyline 렌더 (현재 도보만 그려지는 것 개선)
+### Phase 3 — 앱 통합 (완료 2026-08-28)
+- [x] `fetchDirections` transit 분기를 자체 엔진으로 교체, **NAVITIME 완전 제거**
+      (`src/lib/engine-server.ts` — 프로세스당 1회 로드 캐시, 좌표→반경 1km 플랫폼 매핑,
+      Pareto 후보 중 "도착시각 + 환승당 3분 페널티" 최소 선택)
+- [x] 결과 → `TransitStep[]` 매핑 (`src/lib/engine/geo.ts`) — 한국어 역명, 노선색(route_color),
+      직통 구간 "(직통)" 표기, 접근/이탈 도보 포함. 이동시간 = 도보+승차 (첫차 대기 제외)
+- [x] 지도 전철 폴리라인 — shapes 대신 **정차역 좌표 연결** (경유역 포함, 노선색 표시).
+      shapes.txt 기반 실선형은 백로그 (bin +수 MB 트레이드오프)
+- [x] Vercel 배포 대응 — `pnpm build`가 `prepare.ts` 선행 (데이터 없으면 zip 다운로드→추출→
+      파이프라인 자동 실행), `outputFileTracingIncludes`로 서버리스 번들에 bin 포함
+- [x] 검증: 테스트 58개 (geo 순수 함수 + 실데이터 통합) + 브라우저 E2E
+      (신주쿠역→센소지: 주오쾌속→소부선→츠쿠바익스프레스 + 앞뒤 도보, 실제와 부합)
 
 ### Phase 4 — 오프라인 PWA (2~3주)
 - [ ] 라우팅을 Web Worker로 이동, 바이너리 시간표를 Cache Storage에 저장

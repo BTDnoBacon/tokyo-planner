@@ -72,7 +72,7 @@ function TransitBlock({
   toId: string;
   departureHour: number;
 }) {
-  const { places, transits, transitSteps, updateTransit, setDirectionsResult, setTransitSteps } = usePlaces();
+  const { places, transits, transitSteps, updateTransit, setDirectionsResult, setTransitSteps, setTransitPaths } = usePlaces();
   const transit = transits.find((t) => t.fromId === fromId && t.toId === toId);
   const steps = transitSteps[`${fromId}-${toId}`] ?? null;
   const [isPending, startTransition] = useTransition();
@@ -87,6 +87,7 @@ function TransitBlock({
     updateTransit(fromId, toId, mode, transit?.minutes ?? defaultMin);
     setDirectionsResult(fromId, toId, null);
     setTransitSteps(fromId, toId, null);
+    setTransitPaths(fromId, toId, null);
     setAutoError(null);
     setShowSteps(false);
   }
@@ -106,6 +107,7 @@ function TransitBlock({
     setAutoError(null);
     setDirectionsResult(fromId, toId, null);
     setTransitSteps(fromId, toId, null);
+    setTransitPaths(fromId, toId, null);
 
     startTransition(async () => {
       const result = await fetchDirections(
@@ -123,6 +125,11 @@ function TransitBlock({
       if (result.data.steps && result.data.steps.length > 0) {
         setTransitSteps(fromId, toId, result.data.steps);
         setShowSteps(true);
+      }
+
+      // 전철 구간 폴리라인 — 지도에 노선색으로 표시
+      if (result.data.paths && result.data.paths.length > 0) {
+        setTransitPaths(fromId, toId, result.data.paths);
       }
 
       // 도보는 구글 SDK로 경로 지도 표시
