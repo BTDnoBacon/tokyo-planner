@@ -9,7 +9,7 @@
  * { id, infra } — 후자는 클라이언트가 서버 폴백으로 전환한다.
  */
 import { deserializeTimetable } from "./format";
-import { planTransit } from "./plan";
+import { planTransit, planTransitOptions } from "./plan";
 import type { Timetable } from "./types";
 
 const DATA_URL = "/engine/tokyo-rail.bin.gz";
@@ -61,6 +61,8 @@ interface WorkerRequest {
   id: number;
   /** true면 데이터 로드만 수행 (오프라인 대비 선다운로드) */
   warmup?: boolean;
+  /** true면 Pareto 대안 포함 전체 옵션 반환 */
+  options?: boolean;
   originLat?: number;
   originLng?: number;
   destLat?: number;
@@ -70,7 +72,7 @@ interface WorkerRequest {
 }
 
 self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
-  const { id, warmup, originLat, originLng, destLat, destLng, departureHour, travelDate } = e.data;
+  const { id, warmup, options, originLat, originLng, destLat, destLng, departureHour, travelDate } = e.data;
 
   try {
     if (!timetable) {
@@ -93,9 +95,13 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
   }
 
   try {
-    const result = planTransit(
-      timetable, originLat!, originLng!, destLat!, destLng!, departureHour!, travelDate
-    );
+    const result = options
+      ? planTransitOptions(
+          timetable, originLat!, originLng!, destLat!, destLng!, departureHour!, travelDate
+        )
+      : planTransit(
+          timetable, originLat!, originLng!, destLat!, destLng!, departureHour!, travelDate
+        );
     self.postMessage({ id, response: result });
   } catch (err) {
     // 계산 자체의 예외도 인프라성 — 서버 폴백 대상

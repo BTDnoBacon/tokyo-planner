@@ -2,7 +2,8 @@
 
 import type { TransitStep } from "@/lib/types";
 import type { TransitPath } from "@/lib/engine/geo";
-import { computeTransitRoute } from "@/lib/engine-server";
+import { computeTransitRoute, computeTransitOptions } from "@/lib/engine-server";
+import type { TransitOptionsResponse } from "@/lib/engine-server";
 
 export type TravelMode = "walking" | "transit" | "driving";
 
@@ -92,6 +93,23 @@ async function fetchGoogleRoutes(
     return { ok: true, data: { durationMinutes: Math.ceil(seconds / 60) } };
   } catch {
     return { ok: false, error: "네트워크 오류가 발생했습니다." };
+  }
+}
+
+/** 전철 대안 경로 목록 (자체 엔진) — Web Worker 실패 시의 서버 폴백 */
+export async function fetchTransitOptions(
+  originLat: number,
+  originLng: number,
+  destLat: number,
+  destLng: number,
+  departureHour: number,
+  travelDate?: string
+): Promise<TransitOptionsResponse> {
+  try {
+    return computeTransitOptions(originLat, originLng, destLat, destLng, departureHour, travelDate);
+  } catch (err) {
+    console.error("transit options error:", err);
+    return { ok: false, error: "경로 계산 중 오류가 발생했습니다." };
   }
 }
 

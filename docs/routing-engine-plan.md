@@ -62,7 +62,9 @@ GTFS zip ─→ 파싱·정규화 ─→ 바이너리    1단계: Next.js 서버
     직통운전의 정본 데이터 (block_id보다 명시적). 도보 환승은 Phase 1에서 좌표 기반 합성
   - `shapes.txt` 476,682행 → Phase 3 지도 polyline에 활용
   - calendar 4행 + calendar_dates 51행 → 서비스 패턴 단순 (평일/주말 체계)
-- [ ] ODPT 개발자 등록 — 사용자 직접 진행 필요 (무료, 승인 ~2영업일). TokyoGTFS 우선 전략이라 당장 필수 아님, 챌린지 2026 엔트리 결정(§5) 시점에 함께
+- [x] ODPT 개발자 등록 — 계정 생성 완료 (2026-08-28, 승인 ~2영업일 대기). 승인 후 콘솔에서
+      액세스 토큰 발급 가능. TokyoGTFS 우선 전략이라 당장 쓰진 않음 — GTFS-RT(실시간)·
+      직접 파이프라인 예비·챌린지 2026 엔트리(§5)의 전제 조건 확보
 - [x] draft 자동 저장 구현 — 새로고침 시 플랜 유실 수정 (storage.ts / places-context / routes-context, Playwright로 복원·저장 양방향 검증)
 
 ### Phase 1 — 데이터 파이프라인 (완료 2026-08-28)

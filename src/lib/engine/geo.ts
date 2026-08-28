@@ -69,6 +69,8 @@ export interface TransitResult {
   startSecs: number;
   endSecs: number;
   durationMinutes: number;
+  /** 환승 횟수 (직통은 미카운트) — 대안 경로 비교 표시용 */
+  transfers: number;
 }
 
 /** RAPTOR Journey → 앱 표시용 TransitStep/폴리라인 변환 */
@@ -138,5 +140,5 @@ export function journeyToResult(
     1,
     Math.ceil((accessWalkSecs + (journey.arrivalSecs - journey.departureSecs)) / 60)
   );
-  return { steps, paths, startSecs, endSecs, durationMinutes };
+  return { steps, paths, startSecs, endSecs, durationMinutes, transfers: journey.transfers };
 }
