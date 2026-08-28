@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { usePlaces } from "@/lib/places-context";
 import { useRoutes } from "@/lib/routes-context";
 import { fetchDirections } from "@/lib/actions/directions";
+import { computeTransitLocal } from "@/lib/client-transit";
 import type { TransportMode, TransitStep } from "@/lib/types";
 
 /** "YYYY-MM-DD" + n일 (일차 오프셋용) */
@@ -121,10 +122,17 @@ function TransitBlock({
     setTransitPaths(fromId, toId, null);
 
     startTransition(async () => {
-      const result = await fetchDirections(
-        from.lat, from.lng, to.lat, to.lng,
-        travelMode, departureHour, travelDate
-      );
+      // 전철은 브라우저 내 엔진 우선 (최초 1회 시간표 다운로드 후 오프라인 동작) — 실패 시 서버 폴백
+      const local =
+        travelMode === "transit"
+          ? await computeTransitLocal(from.lat, from.lng, to.lat, to.lng, departureHour, travelDate)
+          : null;
+      const result =
+        local ??
+        (await fetchDirections(
+          from.lat, from.lng, to.lat, to.lng,
+          travelMode, departureHour, travelDate
+        ));
 
       if (!result.ok) {
         setAutoError(result.error);

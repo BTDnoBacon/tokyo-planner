@@ -7,6 +7,7 @@
  */
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { gzipSync } from "node:zlib";
 import { parseCsvRecords } from "./csv";
 import { buildTimetable, type GtfsInput, type GtfsStop, type GtfsTrip } from "./transform";
 import { serializeTimetable, deserializeTimetable } from "../../src/lib/engine/format";
@@ -200,7 +201,14 @@ export function runPipeline() {
   const bin = serializeTimetable(timetable);
   mkdirSync(OUT_DIR, { recursive: true });
   writeFileSync(OUT_FILE, bin);
-  done(`${(bin.length / 1024 / 1024).toFixed(1)}MB → ${OUT_FILE}`);
+  // 브라우저(오프라인 PWA)용 gzip 사본 — Web Worker가 fetch 후 DecompressionStream으로 해제
+  const publicDir = join(process.cwd(), "public", "engine");
+  mkdirSync(publicDir, { recursive: true });
+  const gz = gzipSync(bin, { level: 9 });
+  writeFileSync(join(publicDir, "tokyo-rail.bin.gz"), gz);
+  done(
+    `${(bin.length / 1024 / 1024).toFixed(1)}MB → ${OUT_FILE} (+ gzip ${(gz.length / 1024 / 1024).toFixed(1)}MB → public/engine/)`
+  );
 
   done = step("deserialize (검증)");
   const loaded = deserializeTimetable(readFileSync(OUT_FILE));

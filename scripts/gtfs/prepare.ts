@@ -6,6 +6,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
+import { gzipSync } from "node:zlib";
 import { unzipSync } from "fflate";
 import { runPipeline } from "./pipeline";
 import { deserializeTimetable } from "../../src/lib/engine/format";
@@ -35,9 +36,17 @@ function binIsFresh(): boolean {
   }
 }
 
+const GZ_PATH = join(process.cwd(), "public", "engine", "tokyo-rail.bin.gz");
+
 async function main() {
   const hadBin = existsSync(BIN_PATH);
   if (hadBin && binIsFresh()) {
+    // 구버전 파이프라인으로 만든 bin에는 브라우저용 gzip 사본이 없을 수 있다
+    if (!existsSync(GZ_PATH)) {
+      mkdirSync(dirname(GZ_PATH), { recursive: true });
+      writeFileSync(GZ_PATH, gzipSync(readFileSync(BIN_PATH), { level: 9 }));
+      console.log(`브라우저용 gzip 사본 생성 → ${GZ_PATH}`);
+    }
     console.log(`시간표 데이터 유효 — 준비 생략 (${BIN_PATH})`);
     return;
   }

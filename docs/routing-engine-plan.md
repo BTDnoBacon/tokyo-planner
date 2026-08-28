@@ -114,10 +114,17 @@ GTFS zip ─→ 파싱·정규화 ─→ 바이너리    1단계: Next.js 서버
 - [x] 검증: 테스트 58개 (geo 순수 함수 + 실데이터 통합) + 브라우저 E2E
       (신주쿠역→센소지: 주오쾌속→소부선→츠쿠바익스프레스 + 앞뒤 도보, 실제와 부합)
 
-### Phase 4 — 오프라인 PWA (2~3주)
-- [ ] 라우팅을 Web Worker로 이동, 바이너리 시간표를 Cache Storage에 저장
-- [ ] Service Worker + 매니페스트 (여행지에서 데이터 없이 경로계산)
-- [ ] rRAPTOR: 출발시간 범위 검색 ("9시~10시 사이 출발" 시나리오)
+### Phase 4 — 오프라인 PWA (완료 2026-08-28)
+- [x] 경로 계산 로직을 브라우저 안전 모듈로 분리 (`engine/plan.ts` — 서버·Worker 공용)
+- [x] Web Worker 엔진 (`engine/worker.ts`) — 시간표 gzip(2.4MB) fetch → Cache Storage 저장 →
+      DecompressionStream 해제 → 브라우저 내 계산. 만료 시 온라인이면 자동 갱신
+- [x] 클라이언트 우선 경로: 전철 계산은 Worker 먼저, 실패/타임아웃 시 서버 액션 폴백
+      (`client-transit.ts`) — 온라인에서도 서버 왕복 제거
+- [x] Service Worker(`public/sw.js`) + 매니페스트 + 아이콘 — 설치형 PWA, 정적 자산
+      cache-first / 내비게이션 network-first
+- [x] **오프라인 실검증**: 캐시 채운 뒤 서버 kill → 새로고침 → 앱 셸 로드 + draft 복원 +
+      신주쿠→센소지 경로 계산 성공 (에러 0)
+- [ ] rRAPTOR: 출발시간 범위 검색 ("9시~10시 사이 출발") — 백로그로 이동
 
 ### Phase 5 — 선택 확장 (백로그)
 - 운임: JR 규칙 기반 계산(참고: github.com/xkikeg/ares) + 사철 운임표 → 또는 駅すぱあと API 프리플랜
