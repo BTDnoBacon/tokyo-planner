@@ -21,7 +21,7 @@
     "paths": {
       "@/*": ["./src/*"]
     },
-    "types": ["google.maps"]
+    "types": ["google.maps", "node"]
   },
   "include": [
     "next-env.d.ts",

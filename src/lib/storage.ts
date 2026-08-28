@@ -10,14 +10,29 @@ type LegacyRoute = Omit<Route, "days"> & {
   transits: Transit[];
 };
 
+/** 각 day가 places/transits 배열을 갖춘 유효한 형태인지 — 손상된 값이 앱을 crash-loop에 빠뜨리는 것 방지 */
+function sanitizeDays(days: unknown): DayPlan[] | null {
+  if (!Array.isArray(days) || days.length === 0) return null;
+  const valid = days.every(
+    (d) => d && typeof d === "object" && Array.isArray(d.places) && Array.isArray(d.transits)
+  );
+  return valid ? (days as DayPlan[]) : null;
+}
+
 function migrateRoute(record: Route | LegacyRoute): Route {
-  if ("days" in record && Array.isArray(record.days)) {
-    return record as Route;
+  if ("days" in record) {
+    const days = sanitizeDays(record.days);
+    if (days) return { ...record, days } as Route;
   }
   const { places, transits, ...rest } = record as LegacyRoute;
   return {
     ...rest,
-    days: [{ places: places ?? [], transits: transits ?? [] }],
+    days: [
+      {
+        places: Array.isArray(places) ? places : [],
+        transits: Array.isArray(transits) ? transits : [],
+      },
+    ],
   };
 }
 
@@ -48,11 +63,12 @@ export function loadDraft(): DraftPlan | null {
     const raw = localStorage.getItem(DRAFT_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed?.days) || parsed.days.length === 0) return null;
+    const days = sanitizeDays(parsed?.days);
+    if (!days) return null;
     const idx = typeof parsed.activeDayIndex === "number" ? parsed.activeDayIndex : 0;
     return {
-      days: parsed.days,
-      activeDayIndex: Math.min(Math.max(idx, 0), parsed.days.length - 1),
+      days,
+      activeDayIndex: Math.min(Math.max(idx, 0), days.length - 1),
     };
   } catch {
     return null;

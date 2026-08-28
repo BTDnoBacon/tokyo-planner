@@ -58,30 +58,61 @@ GTFS zip ─→ 파싱·정규화 ─→ 바이너리    1단계: Next.js 서버
 ### Phase 0 — 준비 (완료 2026-08-28)
 - [x] TokyoGTFS rail.zip 다운로드 + 실측 → `data/gtfs/rail.zip` (gitignore됨)
   - **zip 21MB / 사업자 46 / 노선 165 / 정류장 2,896 / trip 91,707 / stop_times 1,208,008행**
-  - `transfers.txt` 27,024행 존재 → 도보 환승 데이터가 이미 상당 부분 제공됨 (Phase 1 합성 부담 감소)
+  - `transfers.txt` 27,024행 — 단, 전량 **transfer_type 4 (trip 간 직통운전)**. 도보 환승이 아니라
+    직통운전의 정본 데이터 (block_id보다 명시적). 도보 환승은 Phase 1에서 좌표 기반 합성
   - `shapes.txt` 476,682행 → Phase 3 지도 polyline에 활용
   - calendar 4행 + calendar_dates 51행 → 서비스 패턴 단순 (평일/주말 체계)
 - [ ] ODPT 개발자 등록 — 사용자 직접 진행 필요 (무료, 승인 ~2영업일). TokyoGTFS 우선 전략이라 당장 필수 아님, 챌린지 2026 엔트리 결정(§5) 시점에 함께
 - [x] draft 자동 저장 구현 — 새로고침 시 플랜 유실 수정 (storage.ts / places-context / routes-context, Playwright로 복원·저장 양방향 검증)
 
-### Phase 1 — 데이터 파이프라인 (1~2주)
-- [ ] GTFS 파싱 (stops/routes/trips/stop_times/calendar/transfers)
-- [ ] RAPTOR용 평탄 배열 재구성 + 날짜별 서비스 필터링
-- [ ] 바이너리 직렬화 (protobuf 또는 자체 포맷) — 클라이언트 로드 대비
-- [ ] 반경 기반 도보 환승(footpath) 합성: 좌표 반경 내 정류장 쌍 × 보행속도 × 우회계수 1.3
-      (도쿄는 같은 역명이라도 사업자별 stop이 분리 — 예: 오테마치 4개 노선 — 이 단계가 필수)
+### Phase 1 — 데이터 파이프라인 (완료 2026-08-28)
+- [x] GTFS 파싱 (`scripts/gtfs/csv.ts` — RFC4180, 따옴표/개행 지원, 121만 행 ~1초)
+- [x] RAPTOR용 평탄 배열 재구성 (`scripts/gtfs/transform.ts`) — **raptor route 2,403개**
+      (동일 정차 패턴 그룹핑), trip 91,707개, 직통운전 27,024쌍 100% 매핑
+- [x] 서비스 캘린더 (`src/lib/engine/calendar.ts`) — 요일 비트마스크 + exception 날짜, 런타임 날짜 필터용
+- [x] 바이너리 직렬화 (`src/lib/engine/format.ts`) — 자체 컨테이너(JSON 헤더 + raw typed array blob,
+      zero-copy 역직렬화). **출력 14.8MB / gzip 2.3MB**, 역직렬화 4ms
+- [x] 도보 환승 합성 — 반경 400m, 4.8km/h × 우회계수 1.3 + 버퍼 30s (하한 90s, 동일역 하한 120s)
+      → 2,716개 (대칭). 대형역 수작업 오버라이드는 Phase 2에서
+- [x] 한국어/영어 역명 병합 (translations.txt — ko/en 각 2,896역 전체)
+- [x] 테스트 33개 (CSV 엣지케이스, 캘린더, 라운드트립, 그룹핑·직통·환승 합성)
+- 실행: `pnpm data:build` → `data/engine/tokyo-rail.bin` (gitignore). 전체 파이프라인 1.5초
 
-### Phase 2 — RAPTOR 코어 (2~4주, 프로젝트의 심장)
-- [ ] 기본 RAPTOR: 최조 도착 + 환승 횟수 Pareto (원 논문: Delling et al., ALENEX 2012)
-- [ ] `block_id` 직통운전 처리 (in-seat transfer)
-- [ ] footpath 전이적 폐쇄 보장 (RAPTOR 정확성 전제조건)
-- [ ] **검증 셋 구축**: 대표 구간 30~50개를 구글맵/Transitous 결과와 자동 대조하는 테스트
-- [ ] 대형 환승역(신주쿠·도쿄·시부야 등) 도보시간 수작업 오버라이드 테이블
+### Phase 2 — RAPTOR 코어 (코어 완료 2026-08-28)
+- [x] 기본 RAPTOR (`src/lib/engine/raptor.ts`) — 최조 도착 + 환승 횟수 Pareto, 멀티 소스/타겟
+      (도보 오프셋), 서비스 캘린더 날짜 필터, 타겟 프루닝, 경로 복원(leg 단위)
+- [x] 직통운전 처리 — transfers.txt(transfer_type 4) 기반. route 스캔에서 종점 도달 시
+      continuation trip으로 같은 라운드(탑승 카운트 불변) 전파, 체인(3사 직통) 지원.
+      실데이터 확인: 도요코선→후쿠토신선 "(직통) 환승 0회" 정상 출력
+- [x] 심야 시각(24h+) 지원 — 서비스일 기준 25:00 표기 그대로 탐색 (24:30 신주쿠→시부야 검증)
+- [x] 테스트 16개 (TDD: 급행 선택, dep==ready 경계, 캘린더, 도보 환승·미달 배제, 직통 0환승,
+      Pareto 2건 반환, maxTransfers, 심야) — 구현 전 작성, 첫 실행 전건 통과
+- [x] 스모크 CLI (`scripts/gtfs/query.ts`) — 한국어 역명 검색, **쿼리 5~20ms / 로드 ~10ms**
+      (신주쿠→시부야 4분 사이쿄선, 신주쿠→오테마치 미타선 환승 등 실제와 부합)
+- [x] **검증 셋** (`scripts/gtfs/validate.ts`) — 대표 40개 구간을 Transitous(공개 MOTIS,
+      같은 TokyoGTFS 사용)와 자동 대조. 방법론: 좌표 기반인 기준계와 조건을 맞추기 위해
+      역 중심→플랫폼 도보를 출발 오프셋으로 부여 + 기준계 응답의 앞뒤 도보 leg 제거
+      (승차~하차 시각 비교). 동명이역 방어(중앙값 2km 클러스터링) 포함.
+      **결과 (2026-09-01 09:00 기준): 40개 중 34개 ±5분 이내 일치** (13개는 ±0분).
+      오차 초과 6건 분석: 자체가 느린 1건(오미야→도쿄)은 기준계가 신칸센 포함 피드(jp-jr)를
+      병용하기 때문(우리 피드는 신칸센 제외 — 원데이터 실측으로 확인). 자체가 빠른 5건은
+      직행 구간 위주로 실제 시각표와 부합 — 기준계의 보수적 환승/접근 프로파일 차이로 판단
+- [ ] 대형 환승역 도보시간 수작업 오버라이드 테이블 — 검증에서 명백히 과소한 환승시간이
+      드러나지 않아 후순위 백로그로 이동 (앱 실사용 피드백 기반으로 채움)
+- 참고: footpath 전이적 폐쇄 대신 "라운드당 도보 1회" 방식 채택 (동등 정확성, 원 논문 각주 방식)
 
-### Phase 3 — 앱 통합 (1주)
-- [ ] `fetchDirections`의 transit 분기를 자체 엔진(서버 실행)으로 교체, NAVITIME 제거
-- [ ] 결과 → `TransitStep[]` 매핑 (노선색은 GTFS route_color)
-- [ ] shapes.txt로 지도에 전철 경로 polyline 렌더 (현재 도보만 그려지는 것 개선)
+### Phase 3 — 앱 통합 (완료 2026-08-28)
+- [x] `fetchDirections` transit 분기를 자체 엔진으로 교체, **NAVITIME 완전 제거**
+      (`src/lib/engine-server.ts` — 프로세스당 1회 로드 캐시, 좌표→반경 1km 플랫폼 매핑,
+      Pareto 후보 중 "도착시각 + 환승당 3분 페널티" 최소 선택)
+- [x] 결과 → `TransitStep[]` 매핑 (`src/lib/engine/geo.ts`) — 한국어 역명, 노선색(route_color),
+      직통 구간 "(직통)" 표기, 접근/이탈 도보 포함. 이동시간 = 도보+승차 (첫차 대기 제외)
+- [x] 지도 전철 폴리라인 — shapes 대신 **정차역 좌표 연결** (경유역 포함, 노선색 표시).
+      shapes.txt 기반 실선형은 백로그 (bin +수 MB 트레이드오프)
+- [x] Vercel 배포 대응 — `pnpm build`가 `prepare.ts` 선행 (데이터 없으면 zip 다운로드→추출→
+      파이프라인 자동 실행), `outputFileTracingIncludes`로 서버리스 번들에 bin 포함
+- [x] 검증: 테스트 58개 (geo 순수 함수 + 실데이터 통합) + 브라우저 E2E
+      (신주쿠역→센소지: 주오쾌속→소부선→츠쿠바익스프레스 + 앞뒤 도보, 실제와 부합)
 
 ### Phase 4 — 오프라인 PWA (2~3주)
 - [ ] 라우팅을 Web Worker로 이동, 바이너리 시간표를 Cache Storage에 저장

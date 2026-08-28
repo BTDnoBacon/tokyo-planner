@@ -105,6 +105,38 @@ function PlaceMarkers() {
   );
 }
 
+// 전철 구간 폴리라인 (자체 엔진 결과, 노선색)
+function TransitPathRenderers() {
+  const map = useMap();
+  const { transitPaths } = usePlaces();
+  const polylinesRef = useRef<google.maps.Polyline[]>([]);
+
+  useEffect(() => {
+    if (!map) return;
+    const polylines: google.maps.Polyline[] = [];
+    Object.values(transitPaths).forEach((paths) => {
+      paths.forEach((path) => {
+        polylines.push(
+          new google.maps.Polyline({
+            map,
+            path: path.points,
+            strokeColor: path.color,
+            strokeWeight: 4,
+            strokeOpacity: 0.85,
+          })
+        );
+      });
+    });
+    polylinesRef.current = polylines;
+    return () => {
+      polylines.forEach((p) => p.setMap(null));
+      polylinesRef.current = [];
+    };
+  }, [map, transitPaths]);
+
+  return null;
+}
+
 // 저장된 DirectionsResult를 지도에 렌더링
 function RouteRenderers() {
   const map = useMap();
@@ -170,6 +202,7 @@ export default function MapView() {
         <MapClickHandler />
         <PlaceMarkers />
         <RouteRenderers />
+        <TransitPathRenderers />
       </Map>
     </APIProvider>
   );

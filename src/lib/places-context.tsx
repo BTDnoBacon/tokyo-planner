@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useCallback, useEffect } from "react";
 import type { DayPlan, Place, Transit, TransportMode, TransitStep } from "./types";
+import type { TransitPath } from "./engine/geo";
 import { loadDraft, saveDraft } from "./storage";
 
 interface PlacesContextValue {
@@ -11,6 +12,7 @@ interface PlacesContextValue {
   activeDayIndex: number;
   directionsResults: Record<string, google.maps.DirectionsResult>;
   transitSteps: Record<string, TransitStep[]>;
+  transitPaths: Record<string, TransitPath[]>;
   addPlace: (place: Omit<Place, "id" | "order">) => void;
   removePlace: (id: string) => void;
   reorderPlaces: (fromIndex: number, toIndex: number) => void;
@@ -20,6 +22,7 @@ interface PlacesContextValue {
   updateTransit: (fromId: string, toId: string, mode: TransportMode, minutes: number) => void;
   setDirectionsResult: (fromId: string, toId: string, result: google.maps.DirectionsResult | null) => void;
   setTransitSteps: (fromId: string, toId: string, steps: TransitStep[] | null) => void;
+  setTransitPaths: (fromId: string, toId: string, paths: TransitPath[] | null) => void;
   movePlaceToDay: (placeId: string, targetDayIndex: number) => void;
   addDay: () => void;
   removeDay: (index: number) => void;
@@ -49,6 +52,7 @@ export function PlacesProvider({ children }: { children: React.ReactNode }) {
   }));
   const [directionsResults, setDirectionsResults] = useState<Record<string, google.maps.DirectionsResult>>({});
   const [transitSteps, setTransitStepsState] = useState<Record<string, TransitStep[]>>({});
+  const [transitPaths, setTransitPathsState] = useState<Record<string, TransitPath[]>>({});
   // draft 복원 완료 전에는 저장하지 않음 — 초기 빈 상태가 기존 draft를 덮어쓰는 것 방지
   const [draftLoaded, setDraftLoaded] = useState(false);
 
@@ -71,6 +75,26 @@ export function PlacesProvider({ children }: { children: React.ReactNode }) {
   const activeDay = days[activeDayIndex] ?? EMPTY_DAY;
   const places = activeDay.places;
   const transits = activeDay.transits;
+
+  // 경로 캐시(지도 경로/전철 상세/폴리라인) 정리 헬퍼
+  const clearCachesFor = useCallback((placeId: string) => {
+    const prune = <T,>(prev: Record<string, T>): Record<string, T> => {
+      const next = { ...prev };
+      Object.keys(next).forEach((key) => {
+        if (key.startsWith(placeId) || key.endsWith(placeId)) delete next[key];
+      });
+      return next;
+    };
+    setDirectionsResults(prune);
+    setTransitStepsState(prune);
+    setTransitPathsState(prune);
+  }, []);
+
+  const clearAllCaches = useCallback(() => {
+    setDirectionsResults({});
+    setTransitStepsState({});
+    setTransitPathsState({});
+  }, []);
 
   // 활성 일차만 변환하는 공통 헬퍼 — 항상 함수형 업데이트라 stale state 없음
   const updateActiveDay = useCallback((updater: (day: DayPlan) => DayPlan) => {
@@ -97,21 +121,8 @@ export function PlacesProvider({ children }: { children: React.ReactNode }) {
         .map((p, i) => ({ ...p, order: i + 1 })),
       transits: day.transits.filter((t) => t.fromId !== id && t.toId !== id),
     }));
-    setDirectionsResults((prev) => {
-      const next = { ...prev };
-      Object.keys(next).forEach((key) => {
-        if (key.startsWith(id) || key.endsWith(id)) delete next[key];
-      });
-      return next;
-    });
-    setTransitStepsState((prev) => {
-      const next = { ...prev };
-      Object.keys(next).forEach((key) => {
-        if (key.startsWith(id) || key.endsWith(id)) delete next[key];
-      });
-      return next;
-    });
-  }, [updateActiveDay]);
+    clearCachesFor(id);
+  }, [updateActiveDay, clearCachesFor]);
 
   const reorderPlaces = useCallback((fromIndex: number, toIndex: number) => {
     updateActiveDay((day) => {
@@ -121,9 +132,8 @@ export function PlacesProvider({ children }: { children: React.ReactNode }) {
       return { ...day, places: next.map((p, i) => ({ ...p, order: i + 1 })) };
     });
     // 순서 바뀌면 경로/steps 초기화
-    setDirectionsResults({});
-    setTransitStepsState({});
-  }, [updateActiveDay]);
+    clearAllCaches();
+  }, [clearAllCaches,updateActiveDay]);
 
   const updateStayMinutes = useCallback((id: string, minutes: number) => {
     updateActiveDay((day) => ({
@@ -194,6 +204,21 @@ export function PlacesProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
+  const setTransitPaths = useCallback(
+    (fromId: string, toId: string, paths: TransitPath[] | null) => {
+      setTransitPathsState((prev) => {
+        const key = `${fromId}-${toId}`;
+        if (paths === null) {
+          const next = { ...prev };
+          delete next[key];
+          return next;
+        }
+        return { ...prev, [key]: paths };
+      });
+    },
+    []
+  );
+
   const movePlaceToDay = useCallback((placeId: string, targetDayIndex: number) => {
     // 렌더 상태 선가드 — no-op 케이스(동일 일차/범위 밖/장소 없음)에는 캐시도 건드리지 않음
     if (
@@ -235,21 +260,8 @@ export function PlacesProvider({ children }: { children: React.ReactNode }) {
       };
     });
     // removePlace와 동일한 캐시 정리 — 이동한 장소와 연결된 경로/steps 제거
-    setDirectionsResults((prev) => {
-      const next = { ...prev };
-      Object.keys(next).forEach((key) => {
-        if (key.startsWith(placeId) || key.endsWith(placeId)) delete next[key];
-      });
-      return next;
-    });
-    setTransitStepsState((prev) => {
-      const next = { ...prev };
-      Object.keys(next).forEach((key) => {
-        if (key.startsWith(placeId) || key.endsWith(placeId)) delete next[key];
-      });
-      return next;
-    });
-  }, [days.length, activeDayIndex, places]);
+    clearCachesFor(placeId);
+  }, [days.length, activeDayIndex, places, clearCachesFor]);
 
   const addDay = useCallback(() => {
     setPlan((prev) => ({
@@ -257,9 +269,8 @@ export function PlacesProvider({ children }: { children: React.ReactNode }) {
       activeDayIndex: prev.days.length,
     }));
     // 일차가 바뀌면 지도에는 활성 일차 경로만 보여야 하므로 캐시 초기화
-    setDirectionsResults({});
-    setTransitStepsState({});
-  }, []);
+    clearAllCaches();
+  }, [clearAllCaches,]);
 
   const removeDay = useCallback((index: number) => {
     // 마지막 1개는 삭제 불가 + 범위 밖 인덱스 무시 (캐시도 건드리지 않음)
@@ -279,9 +290,8 @@ export function PlacesProvider({ children }: { children: React.ReactNode }) {
       }
       return { days: nextDays, activeDayIndex: nextActive };
     });
-    setDirectionsResults({});
-    setTransitStepsState({});
-  }, [days.length]);
+    clearAllCaches();
+  }, [clearAllCaches,days.length]);
 
   const setActiveDay = useCallback((index: number) => {
     if (index < 0 || index >= days.length || index === activeDayIndex) return;
@@ -289,31 +299,28 @@ export function PlacesProvider({ children }: { children: React.ReactNode }) {
       if (index < 0 || index >= prev.days.length || index === prev.activeDayIndex) return prev;
       return { ...prev, activeDayIndex: index };
     });
-    setDirectionsResults({});
-    setTransitStepsState({});
-  }, [days.length, activeDayIndex]);
+    clearAllCaches();
+  }, [clearAllCaches,days.length, activeDayIndex]);
 
   const loadFromDays = useCallback((newDays: DayPlan[]) => {
     setPlan({
       days: newDays.length > 0 ? newDays : [createEmptyDay()],
       activeDayIndex: 0,
     });
-    setDirectionsResults({});
-    setTransitStepsState({});
-  }, []);
+    clearAllCaches();
+  }, [clearAllCaches,]);
 
   const clearAll = useCallback(() => {
     setPlan({ days: [createEmptyDay()], activeDayIndex: 0 });
-    setDirectionsResults({});
-    setTransitStepsState({});
-  }, []);
+    clearAllCaches();
+  }, [clearAllCaches,]);
 
   return (
     <PlacesContext.Provider
       value={{
-        places, transits, days, activeDayIndex, directionsResults, transitSteps,
+        places, transits, days, activeDayIndex, directionsResults, transitSteps, transitPaths,
         addPlace, removePlace, reorderPlaces, updateStayMinutes, renamePlace, updateMemo,
-        updateTransit, setDirectionsResult, setTransitSteps,
+        updateTransit, setDirectionsResult, setTransitSteps, setTransitPaths,
         movePlaceToDay, addDay, removeDay, setActiveDay, loadFromDays, clearAll,
       }}
     >
